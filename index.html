@@ -1149,7 +1149,8 @@ function renderStalls(players, leadingIdx, turnIdx){
 
 /* ============ ONLINE DRAFT RENDER ============ */
 function myPlayerIndex(room){
-  return room.players.findIndex(p=>p.nickname===App.nickname && p.role!=='host');
+  const bidders = room.players.filter(p=>p.role!=='host');
+  return bidders.findIndex(p=>p.nickname===App.nickname);
 }
 function renderOnlineDraft(room){
   const g = room.game;

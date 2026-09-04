@@ -8,7 +8,12 @@ const THEMES = require('./gamedata.js').THEMES;
 const FOOTBALL = require('./gamedata.js').FOOTBALL;
 
 function store(){
-  return getStore({ name: 'rooms', consistency: 'strong' });
+  // NOTE: 'strong' consistency requires an internal uncachedEdgeURL that Netlify
+  // doesn't populate for classic (Lambda-compatibility) functions even with
+  // connectLambda() called — using default eventual consistency instead. Every
+  // write below is still ETag-guarded (onlyIfMatch), so this can't corrupt state;
+  // worst case is an occasional "someone else acted first" retry.
+  return getStore({ name: 'rooms' });
 }
 
 function json(statusCode, body){
@@ -168,7 +173,13 @@ exports.handler = async (event) => {
     if (action === 'join') {
       const code = body.roomCode;
       if (!code) return json(400, { error: 'Missing room code' });
-      const got = await s.getWithMetadata(code, { type: 'json' });
+      let got = await s.getWithMetadata(code, { type: 'json' });
+      if (!got || !got.data) {
+        // brief eventual-consistency propagation window right after room
+        // creation — wait and retry once before reporting not-found
+        await new Promise(r => setTimeout(r, 500));
+        got = await s.getWithMetadata(code, { type: 'json' });
+      }
       if (!got || !got.data) return json(404, { error: 'Room not found' });
       const room = got.data;
       const needed = room.hostMode === '3p' ? 3 : 2;

@@ -83,10 +83,13 @@
 
   .ticker{ background:var(--cream-dark); border-radius:8px; padding:8px 10px; font-family:'SF Mono',monospace; font-size:12px; color:var(--ink-soft); margin-bottom:12px; white-space:nowrap; overflow-x:auto; }
 
-  .raise-row{ display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; }
-  .raise-btn{ flex:1; min-width:60px; padding:14px 6px; border-radius:8px; border:1.5px solid var(--ink); background:#fffdf8; font-family:'SF Mono',monospace; font-size:16px; font-weight:700; cursor:pointer; }
-  .raise-btn:active{ background:var(--cream-dark); }
-  .pass-btn{ width:100%; margin-top:10px; padding:14px; border-radius:8px; border:1.5px solid var(--ink-soft); background:transparent; color:var(--ink-soft); font-weight:700; font-size:15px; }
+  .bid-amount-input{ display:block; width:100%; padding:16px; font-size:26px; text-align:center; border:1px solid var(--line); border-radius:10px; background:#fffdf8; color:var(--ink); font-family:'SF Mono',monospace; margin-top:6px; }
+  .bid-amount-input:focus{ outline:2px solid var(--rust); outline-offset:1px; }
+  .btn-raise{ background:var(--rust); color:#fff; border:none; }
+  .btn-raise:active{ background:var(--rust-dark); }
+  .btn-skip{ background:transparent; color:var(--rust); border:1.5px solid var(--rust); }
+  .btn-skip:active{ background:#fdf1ec; }
+  .bid-caption{ text-align:center; font-size:13px; color:var(--ink-soft); font-style:italic; margin-top:10px; }
 
   .status-line{ text-align:center; font-size:13px; color:var(--ink-soft); margin:10px 0; min-height:18px; }
   .waiting-note{ text-align:center; font-size:14px; color:var(--ink-soft); padding:20px; }
@@ -219,14 +222,12 @@
       <div class="ticker" id="ticker"></div>
 
       <div id="bid-controls">
-        <div class="raise-row" id="raise-row"></div>
-        <button class="pass-btn" id="btn-pass">Pass</button>
-      </div>
-      <div id="skip-controls" class="hidden">
-        <div class="btn-row">
-          <button class="btn btn-secondary" id="btn-skip">🔄 Reroll (<span id="skip-count">3</span> left)</button>
-          <button class="btn btn-primary" id="btn-claim">✓ Take it</button>
+        <input type="number" id="bid-amount-input" inputmode="numeric" class="bid-amount-input">
+        <div class="btn-row" style="margin-top:10px;">
+          <button class="btn btn-raise" id="btn-submit-bid">Raise</button>
+          <button class="btn btn-skip" id="btn-secondary-bid">Pass</button>
         </div>
+        <div class="bid-caption" id="bid-caption">You have $20 left.</div>
       </div>
       <div id="waiting-turn" class="waiting-note hidden">Waiting for the other player…</div>
     </div>
@@ -898,52 +899,71 @@ function renderPracticeDraft(){
   $('bid-display').innerHTML = '$'+P.currentBid + (P.currentBidder!==null ? `<span class="by">— currently held by ${escapeHtml(P.players[P.currentBidder].nick)}</span>` : '');
   $('ticker').textContent = P.tickerLog.length ? P.tickerLog.join(' → ') : 'New lot — place your bid';
 
-  const raiseRow = $('raise-row'); raiseRow.innerHTML='';
   $('waiting-turn').classList.add('hidden');
-  $('bid-controls').classList.add('hidden');
-  $('skip-controls').classList.add('hidden');
-  $('btn-pass').classList.remove('hidden');
-  $('btn-pass').onclick = ()=>{ sndClick(); humanPass(); };
+  hideBidControls();
 
   if(P.mode==='contested'){
     $('status-line').textContent = P.turn===0 ? "Your turn — raise or pass" : "AI is thinking…";
     if(P.turn===0){
-      $('bid-controls').classList.remove('hidden');
-      const opts = [1,2,3,5].map(n=>P.currentBid+n).filter(a=>a<=P.players[0].budget);
-      if(P.players[0].budget>P.currentBid && !opts.includes(P.players[0].budget)) opts.push(P.players[0].budget);
-      opts.slice(0,4).forEach(amt=>{
-        const b=document.createElement('button'); b.className='raise-btn'; b.textContent='$'+amt;
-        b.onclick=()=>{ sndClick(); humanRaise(amt); };
-        raiseRow.appendChild(b);
+      renderBidControls({
+        budget: P.players[0].budget,
+        minAmount: P.currentBid+1,
+        primaryLabel: 'Raise',
+        secondaryLabel: 'Pass',
+        onPrimary: (amt)=>{ sndClick(); humanRaise(amt); },
+        onSecondary: ()=>{ sndClick(); humanPass(); }
       });
-      if(!opts.length){ $('btn-pass').click && null; }
     } else {
       $('waiting-turn').classList.remove('hidden');
     }
   } else if(P.mode==='solo'){
     if(P.soloPlayer===0){
-      $('status-line').textContent = "Nobody else needs this — it's yours. Pay what you like, or reroll.";
-      $('skip-controls').classList.remove('hidden');
-      $('skip-count').textContent = 3-P.skipsUsed;
+      $('status-line').textContent = "Nobody else needs this — it's yours. Pay what you like, or skip.";
       const budget = P.players[0].budget;
-      raiseRow.innerHTML='';
-      $('bid-controls').classList.remove('hidden');
-      $('btn-pass').classList.add('hidden');
-      if(budget===0){
-        const b=document.createElement('button'); b.className='raise-btn'; b.textContent='Claim (Free)';
-        b.onclick=()=>{ sndClick(); humanClaim(0); }; raiseRow.appendChild(b);
-      } else {
-        [1,2,3,5].filter(a=>a<=budget).forEach(amt=>{
-          const b=document.createElement('button'); b.className='raise-btn'; b.textContent='$'+amt;
-          b.onclick=()=>{ sndClick(); humanClaim(amt); }; raiseRow.appendChild(b);
-        });
-      }
-      $('btn-skip').onclick = ()=>{ sndClick(); humanSkip(); };
+      renderBidControls({
+        budget, minAmount:1, freeMode: budget===0,
+        primaryLabel: 'Claim',
+        secondaryLabel: `Skip it (${3-P.skipsUsed} left)`,
+        onPrimary: (amt)=>{ sndClick(); humanClaim(amt); },
+        onSecondary: ()=>{ sndClick(); humanSkip(); }
+      });
     } else {
       $('status-line').textContent = "AI doesn't need to compete for this one…";
       $('waiting-turn').classList.remove('hidden');
     }
   }
+}
+
+/* Unified horizontal bid-control widget: number input + Raise/Claim + Pass/Skip */
+function renderBidControls(opts){
+  $('bid-controls').classList.remove('hidden');
+  const input = $('bid-amount-input');
+  const primaryBtn = $('btn-submit-bid');
+  const secondaryBtn = $('btn-secondary-bid');
+  if(opts.freeMode){
+    input.classList.add('hidden');
+    primaryBtn.textContent = 'Claim (Free)';
+    primaryBtn.onclick = ()=>opts.onPrimary(0);
+  } else {
+    input.classList.remove('hidden');
+    input.min = opts.minAmount;
+    input.max = opts.budget;
+    input.value = Math.min(opts.minAmount, opts.budget);
+    primaryBtn.textContent = opts.primaryLabel;
+    primaryBtn.onclick = ()=>{
+      let amt = parseInt(input.value,10);
+      if(isNaN(amt) || amt<opts.minAmount) amt = opts.minAmount;
+      if(amt>opts.budget) amt = opts.budget;
+      opts.onPrimary(amt);
+    };
+  }
+  secondaryBtn.textContent = opts.secondaryLabel;
+  secondaryBtn.classList.toggle('hidden', !opts.secondaryLabel);
+  secondaryBtn.onclick = opts.onSecondary;
+  $('bid-caption').textContent = `You have $${opts.budget} left.`;
+}
+function hideBidControls(){
+  $('bid-controls').classList.add('hidden');
 }
 
 function roleLabel(cat){
@@ -996,11 +1016,8 @@ function renderOnlineDraft(room){
   $('bid-display').innerHTML = '$'+g.currentBid + (g.currentBidderIdx!==null && g.currentBidderIdx!==undefined ? `<span class="by">— currently held by ${escapeHtml(bidders[g.currentBidderIdx].nickname)}</span>` : '');
   $('ticker').textContent = (g.tickerLog&&g.tickerLog.length) ? g.tickerLog.join(' → ') : 'New lot — place your bid';
 
-  const raiseRow = $('raise-row'); raiseRow.innerHTML='';
   $('waiting-turn').classList.add('hidden');
-  $('bid-controls').classList.add('hidden');
-  $('skip-controls').classList.add('hidden');
-  document.getElementById('btn-pass').classList.remove('hidden');
+  hideBidControls();
 
   const myIdx = myPlayerIndex(room);
   if(amHost){
@@ -1013,37 +1030,28 @@ function renderOnlineDraft(room){
     const myTurn = g.turnIdx===myIdx;
     $('status-line').textContent = myTurn ? "Your turn — raise or pass" : `● Waiting for ${bidders[g.turnIdx].nickname} to respond…`;
     if(myTurn){
-      $('bid-controls').classList.remove('hidden');
-      const budget = bidders[myIdx].budget;
-      const opts = [1,2,3,5].map(n=>g.currentBid+n).filter(a=>a<=budget);
-      if(budget>g.currentBid && !opts.includes(budget)) opts.push(budget);
-      opts.slice(0,4).forEach(amt=>{
-        const b=document.createElement('button'); b.className='raise-btn'; b.textContent='$'+amt;
-        b.onclick=()=>onlineAction('raise',{amount:amt});
-        raiseRow.appendChild(b);
+      renderBidControls({
+        budget: bidders[myIdx].budget,
+        minAmount: g.currentBid+1,
+        primaryLabel: 'Raise',
+        secondaryLabel: 'Pass',
+        onPrimary: (amt)=>onlineAction('raise',{amount:amt}),
+        onSecondary: ()=>onlineAction('pass',{})
       });
-      $('btn-pass').onclick = ()=>onlineAction('pass',{});
     } else {
       $('waiting-turn').classList.remove('hidden');
     }
   } else if(g.mode==='solo'){
     if(g.soloPlayerIdx===myIdx){
       $('status-line').textContent = "Nobody else needs this — it's yours.";
-      $('skip-controls').classList.remove('hidden');
-      $('skip-count').textContent = 3-(g.skipsUsed||0);
-      document.getElementById('btn-pass').classList.add('hidden');
       const budget = bidders[myIdx].budget;
-      $('bid-controls').classList.remove('hidden');
-      if(budget===0){
-        const b=document.createElement('button'); b.className='raise-btn'; b.textContent='Claim (Free)';
-        b.onclick=()=>onlineAction('claim',{amount:0}); raiseRow.appendChild(b);
-      } else {
-        [1,2,3,5].filter(a=>a<=budget).forEach(amt=>{
-          const b=document.createElement('button'); b.className='raise-btn'; b.textContent='$'+amt;
-          b.onclick=()=>onlineAction('claim',{amount:amt}); raiseRow.appendChild(b);
-        });
-      }
-      $('btn-skip').onclick = ()=>onlineAction('skip',{});
+      renderBidControls({
+        budget, minAmount:1, freeMode: budget===0,
+        primaryLabel: 'Claim',
+        secondaryLabel: `Skip it (${3-(g.skipsUsed||0)} left)`,
+        onPrimary: (amt)=>onlineAction('claim',{amount:amt}),
+        onSecondary: ()=>onlineAction('skip',{})
+      });
     } else {
       $('status-line').textContent = `${bidders[g.soloPlayerIdx].nickname} is claiming this one…`;
       $('waiting-turn').classList.remove('hidden');

@@ -1234,7 +1234,7 @@ function renderOnlineDraft(room){
 async function onlineAction(type, payload){
   sndClick();
   try{
-    await api(type, payload);
+    await api(type, Object.assign({nickname: App.nickname}, payload||{}));
     pollRoom();
   } catch(e){
     debugLog(`onlineAction("${type}") rejected: ${e.message}`);
@@ -1420,7 +1420,7 @@ $('btn-cancel-rematch').onclick = ()=>{ App.inRematch=false; App.roomCode=null; 
 $('btn-start-rematch').onclick = async ()=>{
   if(!App.themeKey){ alert('Pick a theme first!'); return; }
   try{
-    const data = await api('newRound', {theme: themePayload()});
+    const data = await api('newRound', {nickname: App.nickname, theme: themePayload()});
     App.inRematch = false;
     renderRoomState(data.room);
     startPolling();

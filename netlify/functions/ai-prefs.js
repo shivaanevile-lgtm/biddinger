@@ -1,7 +1,9 @@
 const { getStore, connectLambda } = require('@netlify/blobs');
 
 function store(){
-  return getStore({ name: 'ai-prefs', consistency: 'strong' });
+  // see note in room.js store() — 'strong' consistency isn't usable in this
+  // function runtime mode, default eventual consistency used instead.
+  return getStore({ name: 'ai-prefs' });
 }
 function json(statusCode, body){
   return { statusCode, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) };

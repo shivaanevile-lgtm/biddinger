@@ -1,4 +1,4 @@
-const { getStore } = require('@netlify/blobs');
+const { getStore, connectLambda } = require('@netlify/blobs');
 
 const FOOTBALL_CATS = ['GK','DEF','MID','ATT'];
 const FOOTBALL_REQUIRED = { GK:1, DEF:1, MID:2, ATT:1 };
@@ -141,6 +141,7 @@ function unsoldLot(room){
 }
 
 exports.handler = async (event) => {
+  connectLambda(event);
   if (event.httpMethod !== 'POST') return json(405, { error: 'Method not allowed' });
   let body;
   try { body = JSON.parse(event.body || '{}'); } catch(e){ return json(400, { error: 'Bad JSON' }); }

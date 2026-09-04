@@ -145,6 +145,33 @@ function unsoldLot(room){
   drawNextLot(room);
 }
 
+function sleep(ms){ return new Promise(r => setTimeout(r, ms)); }
+
+// Reads the room, lets mutateFn apply changes in place, then writes with an
+// ETag guard. Since we're on eventual consistency (see note above), a read
+// can return a version tag that's already stale by the time we write — that's
+// not a real conflict, just a propagation lag, so we re-read and reapply the
+// mutation a few times before giving up. mutateFn returns nothing on success,
+// or {status, error} for a genuine validation failure (never retried).
+async function readMutateWrite(s, code, mutateFn, opts){
+  opts = opts || {};
+  const maxAttempts = opts.maxAttempts || 4;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    let got = await s.getWithMetadata(code, { type: 'json' });
+    if (!got || !got.data) {
+      if (attempt < maxAttempts - 1) { await sleep(250 * (attempt + 1)); continue; }
+      return { status: 404, error: 'Room not found' };
+    }
+    const room = got.data;
+    const fail = mutateFn(room);
+    if (fail) return fail; // logical error — don't retry, it won't resolve itself
+    const ok = await s.setJSON(code, room, { onlyIfMatch: got.etag });
+    if (ok) return { room };
+    await sleep(200 * (attempt + 1));
+  }
+  return { status: 409, error: 'Room changed, please retry' };
+}
+
 exports.handler = async (event) => {
   connectLambda(event);
   if (event.httpMethod !== 'POST') return json(405, { error: 'Method not allowed' });
@@ -173,27 +200,19 @@ exports.handler = async (event) => {
     if (action === 'join') {
       const code = body.roomCode;
       if (!code) return json(400, { error: 'Missing room code' });
-      let got = await s.getWithMetadata(code, { type: 'json' });
-      if (!got || !got.data) {
-        // brief eventual-consistency propagation window right after room
-        // creation — wait and retry once before reporting not-found
-        await new Promise(r => setTimeout(r, 500));
-        got = await s.getWithMetadata(code, { type: 'json' });
-      }
-      if (!got || !got.data) return json(404, { error: 'Room not found' });
-      const room = got.data;
-      const needed = room.hostMode === '3p' ? 3 : 2;
-      if (room.players.length >= needed) return json(400, { error: 'Room is full' });
-      if (room.players.some(p => p.nickname === body.nickname)) return json(400, { error: 'Nickname already taken in this room' });
-      room.players.push({ nickname: body.nickname, role: 'bidder', budget: 20, items: [] });
-      if (room.players.length === needed) {
-        room.phase = 'drafting';
-        room.game = newGame(resolveThemeItems({ themeKey: room.theme.key, customTheme: room.theme.custom }));
-        drawNextLot(room);
-      }
-      const ok = await s.setJSON(code, room, { onlyIfMatch: got.etag });
-      if (!ok) return json(409, { error: 'Room changed, please retry' });
-      return json(200, { room });
+      const result = await readMutateWrite(s, code, (room) => {
+        const needed = room.hostMode === '3p' ? 3 : 2;
+        if (room.players.some(p => p.nickname === body.nickname)) return { status: 400, error: 'Nickname already taken in this room' };
+        if (room.players.length >= needed) return { status: 400, error: 'Room is full' };
+        room.players.push({ nickname: body.nickname, role: 'bidder', budget: 20, items: [] });
+        if (room.players.length === needed) {
+          room.phase = 'drafting';
+          room.game = newGame(resolveThemeItems({ themeKey: room.theme.key, customTheme: room.theme.custom }));
+          drawNextLot(room);
+        }
+      });
+      if (result.error) return json(result.status, { error: result.error });
+      return json(200, { room: result.room });
     }
 
     if (action === 'state') {
@@ -205,73 +224,67 @@ exports.handler = async (event) => {
 
     if (action === 'raise' || action === 'pass' || action === 'skip' || action === 'claim') {
       const code = body.roomCode;
-      const got = await s.getWithMetadata(code, { type: 'json' });
-      if (!got || !got.data) return json(404, { error: 'Room not found' });
-      const room = got.data;
-      if (room.phase !== 'drafting' || !room.game || !room.game.currentLot) return json(400, { error: 'No active lot' });
-      const g = room.game;
-      const bidders = room.players.filter(p => p.role !== 'host');
-      const myIdx = bidders.findIndex(p => p.nickname === body.nickname);
-      if (myIdx < 0) return json(403, { error: 'Not a bidder in this room' });
+      const result = await readMutateWrite(s, code, (room) => {
+        if (room.phase !== 'drafting' || !room.game || !room.game.currentLot) return { status: 400, error: 'No active lot' };
+        const g = room.game;
+        const bidders = room.players.filter(p => p.role !== 'host');
+        const myIdx = bidders.findIndex(p => p.nickname === body.nickname);
+        if (myIdx < 0) return { status: 403, error: 'Not a bidder in this room' };
 
-      if (action === 'raise') {
-        if (g.mode !== 'contested' || g.turnIdx !== myIdx) return json(400, { error: 'Not your turn' });
-        const amount = parseInt(body.amount, 10);
-        if (!(amount > g.currentBid) || amount > bidders[myIdx].budget) return json(400, { error: 'Invalid raise' });
-        g.currentBid = amount; g.currentBidderIdx = myIdx; g.passStreak = 0;
-        g.tickerLog.push(`${bidders[myIdx].nickname}: $${amount}`);
-        g.turnIdx = 1 - g.turnIdx;
-      } else if (action === 'pass') {
-        if (g.mode !== 'contested' || g.turnIdx !== myIdx) return json(400, { error: 'Not your turn' });
-        if (g.currentBidderIdx === null) {
-          g.passStreak = (g.passStreak||0) + 1;
-          if (g.passStreak >= 2) { unsoldLot(room); }
-          else { g.turnIdx = 1 - g.turnIdx; }
-        } else {
-          resolveLotWinner(room, g.currentBidderIdx, g.currentBid);
+        if (action === 'raise') {
+          if (g.mode !== 'contested' || g.turnIdx !== myIdx) return { status: 400, error: 'Not your turn' };
+          const amount = parseInt(body.amount, 10);
+          if (!(amount > g.currentBid) || amount > bidders[myIdx].budget) return { status: 400, error: 'Invalid raise' };
+          g.currentBid = amount; g.currentBidderIdx = myIdx; g.passStreak = 0;
+          g.tickerLog.push(`${bidders[myIdx].nickname}: $${amount}`);
+          g.turnIdx = 1 - g.turnIdx;
+        } else if (action === 'pass') {
+          if (g.mode !== 'contested' || g.turnIdx !== myIdx) return { status: 400, error: 'Not your turn' };
+          if (g.currentBidderIdx === null) {
+            g.passStreak = (g.passStreak||0) + 1;
+            if (g.passStreak >= 2) { unsoldLot(room); }
+            else { g.turnIdx = 1 - g.turnIdx; }
+          } else {
+            resolveLotWinner(room, g.currentBidderIdx, g.currentBid);
+          }
+        } else if (action === 'skip') {
+          if (g.mode !== 'solo' || g.soloPlayerIdx !== myIdx) return { status: 400, error: 'Not your turn' };
+          g.skipsUsed++;
+          if (g.skipsUsed >= 4) {
+            resolveLotWinner(room, myIdx, bidders[myIdx].budget === 0 ? 0 : 1);
+          } else {
+            const cat = g.currentLot.cat;
+            let cand = g.isFootball ? g.footballQueue.shift() : g.itemPool.shift();
+            if (cand) g.currentLot = g.isFootball ? { name: cand[0], r: cand[1], cat } : { name: cand.name, r: cand.r, cat: null };
+          }
+        } else if (action === 'claim') {
+          if (g.mode !== 'solo' || g.soloPlayerIdx !== myIdx) return { status: 400, error: 'Not your turn' };
+          const budget = bidders[myIdx].budget;
+          let amount = budget === 0 ? 0 : Math.max(1, Math.min(budget, parseInt(body.amount,10) || 1));
+          resolveLotWinner(room, myIdx, amount);
         }
-      } else if (action === 'skip') {
-        if (g.mode !== 'solo' || g.soloPlayerIdx !== myIdx) return json(400, { error: 'Not your turn' });
-        g.skipsUsed++;
-        if (g.skipsUsed >= 4) {
-          // 4th attempt: auto-given the CURRENT (not a new) candidate
-          resolveLotWinner(room, myIdx, bidders[myIdx].budget === 0 ? 0 : 1);
-        } else {
-          const cat = g.currentLot.cat;
-          let cand = g.isFootball ? g.footballQueue.shift() : g.itemPool.shift();
-          if (cand) g.currentLot = g.isFootball ? { name: cand[0], r: cand[1], cat } : { name: cand.name, r: cand.r, cat: null };
-        }
-      } else if (action === 'claim') {
-        if (g.mode !== 'solo' || g.soloPlayerIdx !== myIdx) return json(400, { error: 'Not your turn' });
-        const budget = bidders[myIdx].budget;
-        let amount = budget === 0 ? 0 : Math.max(1, Math.min(budget, parseInt(body.amount,10) || 1));
-        resolveLotWinner(room, myIdx, amount);
-      }
-
-      const ok = await s.setJSON(code, room, { onlyIfMatch: got.etag });
-      if (!ok) return json(409, { error: 'Someone else acted first, refresh' });
-      return json(200, { room });
+      });
+      if (result.error) return json(result.status, { error: result.error });
+      return json(200, { room: result.room });
     }
 
     if (action === 'newRound') {
       const code = body.roomCode;
-      const got = await s.getWithMetadata(code, { type: 'json' });
-      if (!got || !got.data) return json(404, { error: 'Room not found' });
-      const room = got.data;
-      const requester = room.players.find(p => p.nickname === body.nickname);
-      if (!requester || (requester.role !== 'host' && requester.role !== 'creator')) {
-        return json(403, { error: 'Only the host can start a rematch' });
-      }
-      const themeResolved = resolveThemeItems(body.theme || {});
-      room.theme = { key: (body.theme&&body.theme.themeKey)||room.theme.key, name: themeResolved.name, emoji: themeResolved.emoji,
-                     football: themeResolved.football, items: themeResolved.items || null, custom: body.theme&&body.theme.customTheme || null };
-      room.players.forEach(p => { p.budget = 20; p.items = []; });
-      room.phase = 'drafting';
-      room.game = newGame(themeResolved);
-      drawNextLot(room);
-      const ok = await s.setJSON(code, room, { onlyIfMatch: got.etag });
-      if (!ok) return json(409, { error: 'Room changed, please retry' });
-      return json(200, { room });
+      const result = await readMutateWrite(s, code, (room) => {
+        const requester = room.players.find(p => p.nickname === body.nickname);
+        if (!requester || (requester.role !== 'host' && requester.role !== 'creator')) {
+          return { status: 403, error: 'Only the host can start a rematch' };
+        }
+        const themeResolved = resolveThemeItems(body.theme || {});
+        room.theme = { key: (body.theme&&body.theme.themeKey)||room.theme.key, name: themeResolved.name, emoji: themeResolved.emoji,
+                       football: themeResolved.football, items: themeResolved.items || null, custom: body.theme&&body.theme.customTheme || null };
+        room.players.forEach(p => { p.budget = 20; p.items = []; });
+        room.phase = 'drafting';
+        room.game = newGame(themeResolved);
+        drawNextLot(room);
+      });
+      if (result.error) return json(result.status, { error: result.error });
+      return json(200, { room: result.room });
     }
 
     return json(400, { error: 'Unknown action' });

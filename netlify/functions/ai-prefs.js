@@ -1,4 +1,4 @@
-const { getStore } = require('@netlify/blobs');
+const { getStore, connectLambda } = require('@netlify/blobs');
 
 function store(){
   return getStore({ name: 'ai-prefs', consistency: 'strong' });
@@ -14,6 +14,7 @@ function bucketFor(itemKey){
 }
 
 exports.handler = async (event) => {
+  connectLambda(event);
   if (event.httpMethod !== 'POST') return json(405, { error: 'Method not allowed' });
   let body;
   try { body = JSON.parse(event.body || '{}'); } catch(e){ return json(400, { error: 'Bad JSON' }); }

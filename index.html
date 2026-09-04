@@ -840,30 +840,37 @@ async function aiTakeTurn(){
   const nextMin = cur+1;
   if(ai.budget < nextMin){ aiPass(); return; }
 
-  const itemsNeeded = P.isFootball
-    ? (FOOTBALL_REQUIRED[P.currentLot.cat] - ai.items.filter(it=>it.cat===P.currentLot.cat).length)
-    : (5 - ai.items.length);
-  const totalRemaining = 5 - ai.items.length;
+  const totalRemaining = 5 - ai.items.length;       // includes this pick
+  const futurePicksAfterThis = totalRemaining - 1;  // picks still needed AFTER this one
+  const reserve = futurePicksAfterThis;             // keep at least $1 per future required pick
 
   let baseFrac;
   if(totalRemaining<=1) baseFrac = 0.7 + Math.random()*0.3;
   else{
-    const steps = {5:0.28,4:0.35,3:0.45,2:0.55};
-    baseFrac = steps[totalRemaining] || 0.5;
+    const steps = {5:0.22,4:0.28,3:0.38,2:0.48};
+    baseFrac = steps[totalRemaining] || 0.4;
   }
   const ratingFactor = 0.67 + (P.currentLot.r-1)/9*(1.33-0.67);
-  let ceiling = Math.min(ai.budget, Math.round(baseFrac*20*ratingFactor));
+  const affordableCeiling = Math.max(0, ai.budget - reserve);
+  const organicCeiling = Math.min(affordableCeiling, Math.round(baseFrac*20*ratingFactor));
 
   const key = (P.currentLot.cat||P.themeName)+'::'+P.currentLot.name;
   const humanAvg = await fetchAiPref(key);
-  if(humanAvg) ceiling = Math.max(ceiling, Math.min(ai.budget, Math.round(humanAvg*1.1)));
+  let ceiling = organicCeiling;
+  if(humanAvg){
+    // learned "market price" can nudge willingness up, but a single outlier bid
+    // can't blow the budget past a sane multiple of what the AI itself thinks is fair
+    const boosted = Math.round(humanAvg*1.1);
+    const softCap = Math.round(organicCeiling*1.5)+2;
+    ceiling = Math.max(organicCeiling, Math.min(affordableCeiling, boosted, softCap));
+  }
 
   if(nextMin > ceiling){ aiPass(); return; }
   const r = Math.random();
   let inc = r<0.6?1: r<0.85?2:3;
   let amount = Math.min(ai.budget, ceiling, cur+inc);
   if(amount<=cur) amount = Math.min(ai.budget, cur+1);
-  if(amount>ai.budget || amount<=cur){ aiPass(); return; }
+  if(amount>ai.budget || amount<=cur || amount>ceiling){ aiPass(); return; }
 
   P.currentBid = amount; P.currentBidder = 1;
   P.tickerLog.push(`AI: $${amount}`);

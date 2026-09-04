@@ -72,15 +72,7 @@
   .room-code{ font-family:'SF Mono',monospace; font-size:26px; letter-spacing:6px; text-align:center; padding:14px; background:var(--cream-dark); border-radius:8px; margin:10px 0; }
 
   /* Draft screen */
-  .stall-row{ display:flex; gap:10px; margin-bottom:14px; }
-  .stall{ flex:1; background:#fffdf8; border:1.5px solid var(--line); border-radius:10px; padding:10px; text-align:center; position:relative; }
-  .stall.leading{ border-color:var(--rust); }
-  .stall.turn::before{ content:'●'; color:var(--rust); position:absolute; top:6px; right:8px; font-size:10px; }
-  .stall .nick{ font-weight:700; font-size:13px; margin-bottom:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-  .stall .budget{ font-family:'SF Mono',monospace; font-size:20px; color:var(--rust); }
-  .stall .count{ font-size:11px; color:var(--ink-soft); margin-top:2px; }
-  .stall .picks{ display:flex; flex-wrap:wrap; gap:3px; justify-content:center; margin-top:6px; min-height:14px; }
-  .stall .picks span{ font-size:9px; background:var(--cream-dark); padding:2px 5px; border-radius:8px; }
+  .stall-row{ margin-bottom:6px; }
 
   .lot-card{ background:#fffdf8; border:2px solid var(--ink); border-radius:12px; padding:20px 16px; text-align:center; margin-bottom:14px; }
   .lot-card .cat{ font-size:11px; text-transform:uppercase; letter-spacing:1.5px; color:var(--ink-soft); margin-bottom:6px; }
@@ -108,12 +100,6 @@
   #results-card{ background:#fffdf8; border:2px solid var(--ink); border-radius:12px; padding:18px; }
   #results-card h2{ text-align:center; margin:0 0 4px; font-size:24px; }
   #results-card .subhead{ text-align:center; color:var(--ink-soft); font-size:13px; margin-bottom:14px; }
-  .score-row{ display:flex; justify-content:space-around; margin:14px 0; }
-  .score-box{ text-align:center; }
-  .score-box .num{ font-family:'SF Mono',monospace; font-size:34px; }
-  .score-box .lbl{ font-size:12px; color:var(--ink-soft); }
-  .score-box.winner .num{ color:var(--rust); }
-  .flavor{ background:var(--cream-dark); border-radius:8px; padding:10px 12px; font-size:13px; margin:8px 0; }
   .flavor::before{ content:'✎ '; }
 
   /* Confetti */
@@ -125,6 +111,30 @@
   .hidden{ display:none !important; }
   .role-tag{ display:inline-block; font-size:10px; background:var(--green); color:#fff; padding:1px 6px; border-radius:4px; margin-left:4px; vertical-align:middle; }
   .icon-tag{ background:var(--gold); }
+
+  /* Player cards (draft + results) — stacked, gradient budget meter */
+  .player-card{ background:#fffdf8; border:1px solid var(--line); border-radius:12px; padding:14px 16px; margin-bottom:10px; transition:border-color .2s; }
+  .player-card.leading{ border-color:var(--rust); }
+  .player-card .prow{ display:flex; justify-content:space-between; align-items:baseline; gap:8px; }
+  .player-card .pname{ font-weight:700; font-size:15.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .player-card .pname .turn-dot{ display:inline-block; width:7px; height:7px; border-radius:50%; background:var(--green); margin-right:6px; vertical-align:middle; }
+  .player-card .pbudget{ font-family:'SF Mono',monospace; font-size:19px; color:var(--rust); white-space:nowrap; }
+  .player-card .psub{ font-size:11.5px; color:var(--ink-soft); margin-top:1px; }
+  .budget-track{ height:6px; border-radius:4px; background:var(--cream-dark); margin:10px 0 8px; overflow:hidden; }
+  .budget-fill{ height:100%; border-radius:4px; background:linear-gradient(90deg,#C1543C,#c99a3f,#4c7a5a); transition:width .35s ease; }
+  .player-card .item-row{ display:flex; justify-content:space-between; align-items:baseline; font-size:13px; padding:6px 0; border-bottom:1px solid var(--line); gap:8px; }
+  .player-card .item-row:last-child{ border-bottom:none; }
+  .player-card .item-row .iname{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .player-card .item-row .iprice{ font-family:'SF Mono',monospace; color:var(--ink-soft); white-space:nowrap; }
+  .player-card .empty-note{ color:var(--ink-soft); font-style:italic; font-size:13px; padding:4px 0 2px; }
+
+  /* Judgment card (results) */
+  .judgment-card{ background:#fffdf8; border:2px solid var(--ink); border-radius:12px; padding:16px; margin-top:6px; }
+  .judgment-card .jhead{ display:flex; align-items:center; gap:10px; margin-bottom:10px; }
+  .judgment-card h2{ margin:0; font-size:21px; }
+  .pill{ font-size:11.5px; font-weight:700; padding:4px 11px; border-radius:20px; background:var(--green); color:#fff; white-space:nowrap; }
+  .pill.tie{ background:var(--ink-soft); }
+  .judgment-text{ font-size:14.5px; line-height:1.55; color:var(--ink); }
 </style>
 </head>
 <body>
@@ -227,7 +237,6 @@
     <div id="results-card">
       <h2 class="serif" id="results-title">Results</h2>
       <div class="subhead" id="results-subhead"></div>
-      <div class="score-row" id="score-row"></div>
       <div id="pitches-wrap"></div>
       <div id="picks-wrap"></div>
       <div id="flavor-wrap"></div>
@@ -695,6 +704,23 @@ function drawNextLotPractice(){
     }
   }
   renderPracticeDraft();
+  triggerAiIfNeeded();
+}
+function triggerAiIfNeeded(){
+  const P = App.practice;
+  if(!P || !P.currentLot) return;
+  if(P.mode==='contested' && P.turn===1){
+    setTimeout(aiTakeTurn, 700);
+  } else if(P.mode==='solo' && P.soloPlayer===1){
+    setTimeout(aiSoloClaim, 700);
+  }
+}
+function aiSoloClaim(){
+  const P = App.practice;
+  if(!P || P.mode!=='solo' || P.soloPlayer!==1) return;
+  const ai = P.players[1];
+  const amount = ai.budget===0 ? 0 : 1;
+  resolveLotWinner(P, 1, amount);
 }
 function drawFootballCandidate(P, cat){
   if(!P.footballCandidates || !P.footballCandidates.length) return null;
@@ -869,7 +895,7 @@ function renderPracticeDraft(){
   $('lot-name').textContent = P.currentLot.name;
   $('lot-stars').textContent = stars(P.currentLot.r);
 
-  $('bid-display').innerHTML = '$'+P.currentBid + (P.currentBidder!==null ? `<span class="by">by ${escapeHtml(P.players[P.currentBidder].nick)}</span>` : '');
+  $('bid-display').innerHTML = '$'+P.currentBid + (P.currentBidder!==null ? `<span class="by">— currently held by ${escapeHtml(P.players[P.currentBidder].nick)}</span>` : '');
   $('ticker').textContent = P.tickerLog.length ? P.tickerLog.join(' → ') : 'New lot — place your bid';
 
   const raiseRow = $('raise-row'); raiseRow.innerHTML='';
@@ -923,15 +949,24 @@ function renderPracticeDraft(){
 function roleLabel(cat){
   return {GK:'⚽ Goalkeeper',DEF:'⚽ Defender',MID:'⚽ Midfielder',ATT:'⚽ Attacker'}[cat] || cat;
 }
+function playerCardHTML(nick, budget, items, opts){
+  opts = opts||{};
+  const pct = Math.max(0, Math.min(100, (budget/20)*100));
+  const dot = opts.turnActive ? '<span class="turn-dot"></span>' : '';
+  const rows = items.length
+    ? items.map(it=>`<div class="item-row"><span class="iname">${escapeHtml((it.name||'').split(',')[0])}</span><span class="iprice">${it.paid===0?'FREE':(it.paid!=null?'$'+it.paid:'')}</span></div>`).join('')
+    : `<div class="empty-note">Nothing yet</div>`;
+  return `<div class="player-card${opts.leading?' leading':''}">
+    <div class="prow"><span class="pname">${dot}${escapeHtml(nick)}</span><span class="pbudget mono">$${budget}</span></div>
+    <div class="psub">remaining · ${items.length}/5 items</div>
+    <div class="budget-track"><div class="budget-fill" style="width:${pct}%"></div></div>
+    ${rows}
+  </div>`;
+}
 function renderStalls(players, leadingIdx, turnIdx){
   const row = $('stall-row'); row.innerHTML='';
   players.forEach((p,i)=>{
-    const el = document.createElement('div');
-    el.className = 'stall' + (leadingIdx===i?' leading':'') + (turnIdx===i?' turn':'');
-    el.innerHTML = `<div class="nick">${escapeHtml(p.nick)}</div><div class="budget mono">$${p.budget}</div>
-      <div class="count">${p.items.length}/5 items</div>
-      <div class="picks">${p.items.map(it=>`<span>${escapeHtml(it.name.split(',')[0].slice(0,14))}</span>`).join('')}</div>`;
-    row.appendChild(el);
+    row.innerHTML += playerCardHTML(p.nick, p.budget, p.items, {leading: leadingIdx===i, turnActive: turnIdx===i});
   });
 }
 
@@ -958,7 +993,7 @@ function renderOnlineDraft(room){
   $('lot-cat').textContent = g.currentLot.cat ? roleLabel(g.currentLot.cat) : (room.theme.emoji||'🎯')+' '+room.theme.name;
   $('lot-name').textContent = g.currentLot.name;
   $('lot-stars').textContent = stars(g.currentLot.r);
-  $('bid-display').innerHTML = '$'+g.currentBid + (g.currentBidderIdx!==null && g.currentBidderIdx!==undefined ? `<span class="by">by ${escapeHtml(bidders[g.currentBidderIdx].nickname)}</span>` : '');
+  $('bid-display').innerHTML = '$'+g.currentBid + (g.currentBidderIdx!==null && g.currentBidderIdx!==undefined ? `<span class="by">— currently held by ${escapeHtml(bidders[g.currentBidderIdx].nickname)}</span>` : '');
   $('ticker').textContent = (g.tickerLog&&g.tickerLog.length) ? g.tickerLog.join(' → ') : 'New lot — place your bid';
 
   const raiseRow = $('raise-row'); raiseRow.innerHTML='';
@@ -976,7 +1011,7 @@ function renderOnlineDraft(room){
   }
   if(g.mode==='contested'){
     const myTurn = g.turnIdx===myIdx;
-    $('status-line').textContent = myTurn ? "Your turn — raise or pass" : `Waiting for ${bidders[g.turnIdx].nickname}…`;
+    $('status-line').textContent = myTurn ? "Your turn — raise or pass" : `● Waiting for ${bidders[g.turnIdx].nickname} to respond…`;
     if(myTurn){
       $('bid-controls').classList.remove('hidden');
       const budget = bidders[myIdx].budget;
@@ -1022,11 +1057,12 @@ async function onlineAction(type, payload){
 }
 
 /* ============ JUDGE ============ */
-const SPLURGE_TPL = ["{p} went all in, dropping ${a} on {item}.", "{p} didn't blink at ${a} for {item}.", "Big spender alert: {p} paid ${a} for {item}."];
-const STEAL_TPL = ["{p} walked away with {item} for just ${a}.", "Absolute heist: {p} got {item} for ${a}.", "{p} snagged {item} at a bargain ${a}."];
+const OPENER_TPL = ["Auction's over — time to judge.", "Bidding's done. Let's tally it up.", "That's the last lot. Here's the read."];
+const SPLURGE_TPL = ["No restraint from {p} — ${a} on {item} alone.", "{p} didn't blink at ${a} for {item}.", "Big spender alert: {p} paid ${a} for {item}."];
+const STEAL_TPL = ["{p} got {item} for pocket change — ${a}.", "{p} walked away with {item} for just ${a}.", "{p} snagged {item} at a bargain ${a}."];
 const FREEBIE_TPL = ["{n} item{s} came home completely free.", "{n} lucky freebie{s} made it into the final collections.", "{n} pick{s} cost absolutely nothing."];
-const WIN_TPL = ["{p} built the stronger collection overall.", "{p} takes it, item for item.", "{p}'s picks simply rated higher across the board."];
-const TIE_TPL = ["It's a dead heat — both collections rate exactly the same.", "Too close to call: an even split in quality."];
+const WIN_TPL = ["{p} built the sharper collection — {a1} average vs {a2}.", "{p} simply rated higher across the board, {a1} to {a2}.", "{p} takes it, item for item — {a1} vs {a2}."];
+const TIE_TPL = ["Dead even — both collections rate exactly {a1} on average.", "Too close to call: an even split in quality, {a1} apiece."];
 
 function judgeGame(playersItems){
   const avg = items => items.length ? items.reduce((s,it)=>s+it.r,0)/items.length : 0;
@@ -1035,30 +1071,44 @@ function judgeGame(playersItems){
   if(avgs[0]>avgs[1]) winner=0; else if(avgs[1]>avgs[0]) winner=1;
   return {avgs, winner};
 }
-function flavorLines(bidLog, playerNicks){
-  const lines = [];
-  const splurges = bidLog.filter(b=>b.amount>=5);
-  if(splurges.length){
-    const b = splurges[splurges.length-1];
-    lines.push(pick(SPLURGE_TPL).replace('{p}',playerNicks[b.player]).replace('{a}',b.amount).replace('{item}',b.name));
+function subj(nick){ return nick==='You' ? 'You' : nick; }
+function buildJudgmentParagraph(nicks, itemsArr, budgets, bidLog, j){
+  const spent = budgets.map(b=>20-b);
+  const counts = itemsArr.map(items=>items.length);
+  const s = [];
+  s.push(pick(OPENER_TPL));
+  s.push(nicks[0]==='You'
+    ? `You put down $${spent[0]} of your $20 across ${counts[0]} pick${counts[0]===1?'':'s'}.`
+    : `${nicks[0]} put down $${spent[0]} of their $20 across ${counts[0]} pick${counts[0]===1?'':'s'}.`);
+  s.push(`${nicks[1]} spent $${spent[1]}, landing ${counts[1]} pick${counts[1]===1?'':'s'}.`);
+  const bigLog = bidLog.filter(b=>b.amount>=5).sort((a,b)=>b.amount-a.amount);
+  if(bigLog.length){
+    const b = bigLog[0];
+    s.push(pick(SPLURGE_TPL).replace('{p}',subj(nicks[b.player])).replace('{a}',b.amount).replace('{item}',b.name));
   }
   const steals = bidLog.filter(b=>b.amount>0 && b.amount<=2);
   if(steals.length){
     const b = steals[0];
-    lines.push(pick(STEAL_TPL).replace('{p}',playerNicks[b.player]).replace('{a}',b.amount).replace('{item}',b.name));
+    s.push(pick(STEAL_TPL).replace('{p}',subj(nicks[b.player])).replace('{a}',b.amount).replace('{item}',b.name));
   }
   const freebies = bidLog.filter(b=>b.amount===0).length;
   if(freebies>0){
-    lines.push(pick(FREEBIE_TPL).replace('{n}',freebies).replace(/{s}/g, freebies===1?'':'s'));
+    s.push(pick(FREEBIE_TPL).replace('{n}',freebies).replace(/{s}/g, freebies===1?'':'s'));
   }
-  return lines;
+  if(j.winner===null){
+    s.push(pick(TIE_TPL).replace(/{a1}/g, j.avgs[0].toFixed(1)));
+  } else {
+    s.push(pick(WIN_TPL).replace('{p}',subj(nicks[j.winner])).replace('{a1}',j.avgs[j.winner].toFixed(1)).replace('{a2}',j.avgs[1-j.winner].toFixed(1)));
+  }
+  return s.join(' ');
 }
 
 /* ============ RESULTS: PRACTICE ============ */
 function showResultsScreen(players, P, isFootball){
   const itemsArr = players.map(p=>p.items);
   const nicks = players.map(p=>p.nick);
-  renderResults(itemsArr, nicks, P.bidLog, isFootball, {
+  const budgets = players.map(p=>p.budget);
+  renderResults(itemsArr, nicks, budgets, P.bidLog, isFootball, {
     themeLabel: (P.themeEmoji||'')+' '+P.themeName,
     onRematch: ()=>{ showScreen('screen-draft'); startPracticeGame(); }
   });
@@ -1069,9 +1119,10 @@ function renderResultsFromRoom(room){
   const bidders = room.players.filter(p=>p.role!=='host');
   const itemsArr = bidders.map(p=>p.items);
   const nicks = bidders.map(p=>p.nickname);
+  const budgets = bidders.map(p=>p.budget);
   const isFootball = room.theme.key==='football';
   const amHostOrCreator = room.players.find(p=>p.nickname===App.nickname && (p.role==='host'||p.role==='creator'));
-  renderResults(itemsArr, nicks, room.game.bidLog||[], isFootball, {
+  renderResults(itemsArr, nicks, budgets, room.game.bidLog||[], isFootball, {
     themeLabel: (room.theme.emoji||'🎯')+' '+room.theme.name,
     canRematch: !!amHostOrCreator,
     onRematch: goRematchThemePick
@@ -1079,22 +1130,17 @@ function renderResultsFromRoom(room){
 }
 
 /* ============ SHARED RESULTS RENDER ============ */
-function renderResults(itemsArr, nicks, bidLog, isFootball, opts){
+function renderResults(itemsArr, nicks, budgets, bidLog, isFootball, opts){
   showScreen('screen-results');
   const j = judgeGame(itemsArr);
-  $('results-title').textContent = j.winner===null ? "It's a tie!" : `${nicks[j.winner]} wins!`;
-  $('results-subhead').textContent = opts.themeLabel + (j.winner===null ? '' : ' — '+pick(WIN_TPL).replace('{p}',nicks[j.winner]));
-
-  const scoreRow = $('score-row'); scoreRow.innerHTML='';
-  nicks.forEach((n,i)=>{
-    const box = document.createElement('div');
-    box.className='score-box'+(j.winner===i?' winner':'');
-    box.innerHTML = `<div class="num mono">${j.avgs[i].toFixed(1)}</div><div class="lbl">${escapeHtml(n)}<br>avg rating</div>`;
-    scoreRow.appendChild(box);
-  });
+  $('results-title').textContent = opts.themeLabel;
+  $('results-subhead').textContent = '';
 
   const picksWrap = $('picks-wrap'); picksWrap.innerHTML='';
   $('pitches-wrap').innerHTML='';
+  nicks.forEach((n,i)=>{
+    picksWrap.innerHTML += playerCardHTML(n, budgets[i], itemsArr[i], {leading: j.winner===i});
+  });
   if(isFootball){
     const pitchWrap = document.createElement('div'); pitchWrap.className='pitch-wrap';
     itemsArr.forEach((items,i)=>{
@@ -1103,31 +1149,22 @@ function renderResults(itemsArr, nicks, bidLog, isFootball, opts){
       pitchWrap.appendChild(col);
     });
     $('pitches-wrap').appendChild(pitchWrap);
-  } else {
-    itemsArr.forEach((items,i)=>{
-      const block = document.createElement('div'); block.style.marginBottom='10px';
-      block.innerHTML = `<div style="font-weight:700; font-size:13px; margin-bottom:4px;">${escapeHtml(nicks[i])}</div>` +
-        items.map(it=>`<div style="display:flex; justify-content:space-between; font-size:13px; padding:3px 0; border-bottom:1px solid var(--line);">
-          <span>${escapeHtml(it.name)} <span style="color:var(--ink-soft); font-size:11px;">${stars(it.r)}</span></span>
-          <span class="mono">${it.paid===0?'FREE':'$'+it.paid}</span></div>`).join('');
-      picksWrap.appendChild(block);
-    });
   }
 
   const flavorWrap = $('flavor-wrap'); flavorWrap.innerHTML='';
-  flavorLines(bidLog, nicks).forEach(l=>{
-    const d = document.createElement('div'); d.className='flavor'; d.textContent=l;
-    flavorWrap.appendChild(d);
-  });
-  if(j.winner===null){
-    const d = document.createElement('div'); d.className='flavor'; d.textContent = pick(TIE_TPL);
-    flavorWrap.appendChild(d);
-  }
+  const pillLabel = j.winner===null ? "It's a tie" : `${nicks[j.winner]} wins`;
+  const pillClass = j.winner===null ? 'pill tie' : 'pill';
+  const paragraph = buildJudgmentParagraph(nicks, itemsArr, budgets, bidLog, j);
+  const card = document.createElement('div'); card.className='judgment-card';
+  card.innerHTML = `<div class="jhead"><h2 class="serif">Judgment</h2><span class="${pillClass}">${escapeHtml(pillLabel)}</span></div>
+    <div class="judgment-text">${escapeHtml(paragraph)}</div>`;
+  flavorWrap.appendChild(card);
 
   $('btn-rematch').classList.toggle('hidden', opts.canRematch===false);
   $('btn-rematch').onclick = opts.onRematch;
   $('btn-home').onclick = ()=>{ stopPolling(); App.roomCode=null; App.mode=null; showScreen('screen-home'); };
 }
+
 
 /* ============ SVG SOCCER PITCH ============ */
 function shortName(n){ const parts=n.split(' '); return parts.length>1 ? parts[parts.length-1] : n; }

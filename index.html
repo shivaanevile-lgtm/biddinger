@@ -1233,8 +1233,19 @@ function renderOnlineDraft(room){
 }
 async function onlineAction(type, payload){
   sndClick();
-  try{ await api(type, payload); pollRoom(); }
-  catch(e){ /* likely a version conflict from concurrent action; next poll will resync */ pollRoom(); }
+  try{
+    await api(type, payload);
+    pollRoom();
+  } catch(e){
+    debugLog(`onlineAction("${type}") rejected: ${e.message}`);
+    // A stale-write conflict resolves itself silently on the next poll — but
+    // anything else (wrong turn, invalid amount, etc.) needs to be visible,
+    // otherwise tapping Raise/Pass just does nothing with no explanation.
+    if(!/room changed|conflict/i.test(e.message)){
+      alert(`Action failed: ${e.message}`);
+    }
+    pollRoom();
+  }
 }
 
 /* ============ JUDGE ============ */

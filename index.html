@@ -1,298 +1,1444 @@
-const { getStore, connectLambda } = require('@netlify/blobs');
-
-const FOOTBALL_CATS = ['GK','DEF','MID','ATT'];
-const FOOTBALL_REQUIRED = { GK:1, DEF:1, MID:2, ATT:1 };
-
-// ---- theme/football data (kept small + self-contained for the function) ----
-const THEMES = require('./gamedata.js').THEMES;
-const FOOTBALL = require('./gamedata.js').FOOTBALL;
-
-function store(){
-  // NOTE: 'strong' consistency requires an internal uncachedEdgeURL that Netlify
-  // doesn't populate for classic (Lambda-compatibility) functions even with
-  // connectLambda() called — using default eventual consistency instead. Every
-  // write below is still ETag-guarded (onlyIfMatch), so this can't corrupt state;
-  // worst case is an occasional "someone else acted first" retry.
-  return getStore({ name: 'rooms' });
-}
-
-function json(statusCode, body){
-  return { statusCode, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) };
-}
-
-function roomCodeGen(){
-  const chars = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
-  let s = '';
-  for (let i=0;i<5;i++) s += chars[Math.floor(Math.random()*chars.length)];
-  return s;
-}
-function shuffle(arr){
-  const a = arr.slice();
-  for (let i=a.length-1;i>0;i--){ const j = Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; }
-  return a;
-}
-function pick(arr){ return arr[Math.floor(Math.random()*arr.length)]; }
-
-function resolveThemeItems(theme){
-  if (theme.themeKey === 'football') return { football:true, name:'5-a-Side Draft', emoji:'⚽' };
-  if (theme.themeKey === 'custom' && theme.customTheme) {
-    return { football:false, name: theme.customTheme.name, emoji:'✏️', items: theme.customTheme.items };
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no">
+<title>Build Your Best ___</title>
+<style>
+  :root{
+    --cream:#F5EFE3;
+    --cream-dark:#EAE1CE;
+    --rust:#C1543C;
+    --rust-dark:#a3402c;
+    --ink:#2B2620;
+    --ink-soft:#6b6255;
+    --line:#d9cfba;
+    --green:#4c7a5a;
+    --gold:#c99a3f;
   }
-  const t = THEMES[theme.themeKey];
-  if (!t) throw new Error('Unknown theme');
-  return { football:false, name:t.name, emoji:t.emoji, items:t.items };
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--cream);
+    color:var(--ink);
+    font-family:'Helvetica Neue',Arial,sans-serif;
+    min-height:100vh;
+    -webkit-font-smoothing:antialiased;
+  }
+  h1,h2,h3,.serif{ font-family:Georgia,'Times New Roman',serif; }
+  .mono{ font-family:'SF Mono',Menlo,Consolas,monospace; }
+  #app{ max-width:520px; margin:0 auto; min-height:100vh; padding:18px 16px 40px; position:relative; }
+  .screen{ display:none; animation:fadein .25s ease; }
+  .screen.active{ display:block; }
+  @keyframes fadein{ from{opacity:0; transform:translateY(6px);} to{opacity:1; transform:translateY(0);} }
+
+  .masthead{ text-align:center; margin-bottom:18px; padding-bottom:14px; border-bottom:3px double var(--ink); }
+  .masthead h1{ font-size:30px; margin:0 0 2px; letter-spacing:.2px; }
+  .masthead .blank{ border-bottom:2px solid var(--rust); padding:0 6px; }
+  .masthead p{ margin:4px 0 0; color:var(--ink-soft); font-size:13px; }
+
+  .card{ background:#fffdf8; border:1px solid var(--line); border-radius:10px; padding:14px; margin-bottom:12px; box-shadow:0 1px 0 rgba(0,0,0,.03); }
+  .section-label{ font-size:12px; color:var(--ink-soft); margin:18px 0 8px; font-family:Georgia,serif; font-style:italic; }
+
+  .theme-grid{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .theme-chip{
+    background:#fffdf8; border:1px solid var(--line); border-radius:10px;
+    padding:14px 10px; text-align:center; cursor:pointer; transition:transform .1s, border-color .15s;
+  }
+  .theme-chip:active{ transform:scale(.96); }
+  .theme-chip.selected{ border-color:var(--rust); background:#fdf1ec; }
+  .theme-chip .emoji{ font-size:28px; display:block; margin-bottom:6px; }
+  .theme-chip .name{ font-size:13.5px; font-weight:600; }
+
+  input[type=text]{
+    width:100%; padding:12px 12px; font-size:16px; border:1px solid var(--line); border-radius:8px;
+    background:#fffdf8; color:var(--ink); font-family:inherit;
+  }
+  input[type=text]:focus{ outline:2px solid var(--rust); outline-offset:1px; }
+
+  .btn{
+    display:block; width:100%; text-align:center; padding:14px; border-radius:8px; border:none;
+    font-size:16px; font-weight:700; cursor:pointer; margin-top:10px; font-family:inherit;
+  }
+  .btn-primary{ background:var(--rust); color:#fff; }
+  .btn-primary:active{ background:var(--rust-dark); }
+  .btn-secondary{ background:transparent; color:var(--ink); border:1.5px solid var(--ink); }
+  .btn-ghost{ background:transparent; color:var(--ink-soft); border:none; text-decoration:underline; padding:8px; }
+  .btn:disabled{ opacity:.4; }
+  .btn-row{ display:flex; gap:10px; }
+  .btn-row .btn{ flex:1; }
+
+  .badge{ display:inline-block; background:var(--cream-dark); color:var(--ink-soft); font-size:11px; padding:3px 8px; border-radius:20px; margin-left:6px; }
+  .room-code{ font-family:'SF Mono',monospace; font-size:26px; letter-spacing:6px; text-align:center; padding:14px; background:var(--cream-dark); border-radius:8px; margin:10px 0; }
+
+  /* Item-won toast — shown for every lot resolution, styled by price tier */
+  .free-toast{
+    position:fixed; top:32%; left:50%; transform:translate(-50%,-50%) scale(0.85);
+    padding:16px 24px; border-radius:16px;
+    font-family:Georgia,serif; font-weight:700; font-size:19px; text-align:center;
+    box-shadow:0 10px 34px rgba(0,0,0,.24); z-index:1000; opacity:0; pointer-events:none;
+    max-width:86vw;
+  }
+  .free-toast .sub{ display:block; font-family:'Helvetica Neue',sans-serif; font-size:13px; font-weight:600; margin-top:5px; }
+  .free-toast.variant-free{ background:var(--gold); color:var(--ink); font-size:22px; }
+  .free-toast.variant-steal{ background:var(--rust); color:#fff; }
+  .free-toast.variant-sold{ background:#fffdf8; color:var(--ink); border:2px solid var(--ink); }
+  .free-toast.variant-joined{ background:var(--green); color:#fff; font-size:19px; }
+  .free-toast.show.variant-joined{ animation: softPop 1.5s ease forwards; }
+  .free-toast.show.variant-free,
+  .free-toast.show.variant-steal{ animation: bigPop 1.7s ease forwards; }
+  .free-toast.show.variant-sold{ animation: softPop 1.25s ease forwards; }
+  @keyframes bigPop{
+    0%{ opacity:0; transform:translate(-50%,-50%) scale(0.4) rotate(-6deg); }
+    14%{ opacity:1; transform:translate(-50%,-50%) scale(1.1) rotate(2deg); }
+    24%{ transform:translate(-50%,-50%) scale(1) rotate(0deg); }
+    82%{ opacity:1; transform:translate(-50%,-50%) scale(1) rotate(0deg); }
+    100%{ opacity:0; transform:translate(-50%,-50%) scale(0.92) rotate(0deg); }
+  }
+  @keyframes softPop{
+    0%{ opacity:0; transform:translate(-50%,-50%) scale(0.85); }
+    18%{ opacity:1; transform:translate(-50%,-50%) scale(1); }
+    78%{ opacity:1; transform:translate(-50%,-50%) scale(1); }
+    100%{ opacity:0; transform:translate(-50%,-50%) scale(0.96); }
+  }
+
+  /* Draft screen */
+  .stall-row{ margin-bottom:6px; }
+
+  .lot-card{ background:#fffdf8; border:2px solid var(--ink); border-radius:12px; padding:20px 16px; text-align:center; margin-bottom:14px; }
+  .lot-card .cat{ font-size:11px; text-transform:uppercase; letter-spacing:1.5px; color:var(--ink-soft); margin-bottom:6px; }
+  .lot-card .name{ font-family:Georgia,serif; font-size:22px; font-weight:700; line-height:1.25; }
+  .lot-card .stars{ color:var(--gold); font-size:13px; margin-top:6px; }
+  .bid-display{ font-family:'SF Mono',monospace; font-size:38px; text-align:center; margin:12px 0 4px; color:var(--rust); }
+  .bid-display .by{ display:block; font-family:'Helvetica Neue',sans-serif; font-size:12px; color:var(--ink-soft); margin-top:2px; }
+
+  .ticker{ background:var(--cream-dark); border-radius:8px; padding:8px 10px; font-family:'SF Mono',monospace; font-size:12px; color:var(--ink-soft); margin-bottom:12px; white-space:nowrap; overflow-x:auto; }
+
+  .bid-amount-input{ display:block; width:100%; padding:16px; font-size:26px; text-align:center; border:1px solid var(--line); border-radius:10px; background:#fffdf8; color:var(--ink); font-family:'SF Mono',monospace; margin-top:6px; }
+  .bid-amount-input:focus{ outline:2px solid var(--rust); outline-offset:1px; }
+  .btn-raise{ background:var(--rust); color:#fff; border:none; }
+  .btn-raise:active{ background:var(--rust-dark); }
+  .btn-skip{ background:transparent; color:var(--rust); border:1.5px solid var(--rust); }
+  .btn-skip:active{ background:#fdf1ec; }
+  .bid-caption{ text-align:center; font-size:13px; color:var(--ink-soft); font-style:italic; margin-top:10px; }
+
+  .status-line{ text-align:center; font-size:13px; color:var(--ink-soft); margin:10px 0; min-height:18px; }
+  .waiting-note{ text-align:center; font-size:14px; color:var(--ink-soft); padding:20px; }
+
+  /* Football pitch */
+  .pitch-wrap{ display:flex; gap:10px; }
+  .pitch-col{ flex:1; text-align:center; }
+  svg.pitch{ width:100%; height:auto; }
+
+  /* Results */
+  #results-card{ background:#fffdf8; border:2px solid var(--ink); border-radius:12px; padding:18px; }
+  #results-card h2{ text-align:center; margin:0 0 4px; font-size:24px; }
+  #results-card .subhead{ text-align:center; color:var(--ink-soft); font-size:13px; margin-bottom:14px; }
+  .flavor::before{ content:'✎ '; }
+
+  /* Confetti */
+  .confetti-piece{ position:fixed; top:-10px; width:8px; height:14px; opacity:.9; pointer-events:none; z-index:999; border-radius:2px; }
+
+  .footer-note{ text-align:center; font-size:11px; color:var(--ink-soft); margin-top:24px; }
+
+  /* On-page debug console — tap the footer 5x to open. Phone-only debugging,
+     since there's no server log for a static file the way there is for functions. */
+  #debug-panel{
+    position:fixed; left:0; right:0; bottom:0; max-height:55vh; overflow-y:auto;
+    background:#161512; color:#8fe08f; font-family:'SF Mono',Menlo,monospace; font-size:11.5px;
+    padding:10px 12px 16px; z-index:2000; border-top:2px solid var(--rust);
+  }
+  .debug-panel-head{ display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; color:#fff; font-family:'Helvetica Neue',sans-serif; }
+  .debug-panel-head button{ background:#2a2a26; color:#fff; border:1px solid #444; border-radius:6px; padding:5px 9px; font-size:11px; margin-left:6px; }
+  #debug-log-content{ white-space:pre-wrap; word-break:break-word; line-height:1.5; }
+  .debug-entry{ border-bottom:1px solid #333; padding:6px 0; }
+  .debug-entry .ts{ color:#777; }
+  .link-like{ color:var(--rust); text-decoration:underline; cursor:pointer; }
+  .center{ text-align:center; }
+  .hidden{ display:none !important; }
+  .role-tag{ display:inline-block; font-size:10px; background:var(--green); color:#fff; padding:1px 6px; border-radius:4px; margin-left:4px; vertical-align:middle; }
+  .icon-tag{ background:var(--gold); }
+
+  /* Player cards (draft + results) — stacked, gradient budget meter */
+  .player-card{ background:#fffdf8; border:1px solid var(--line); border-radius:12px; padding:14px 16px; margin-bottom:10px; transition:border-color .2s; }
+  .player-card.leading{ border-color:var(--rust); }
+  .player-card .prow{ display:flex; justify-content:space-between; align-items:baseline; gap:8px; }
+  .player-card .pname{ font-weight:700; font-size:15.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .player-card .pname .turn-dot{ display:inline-block; width:7px; height:7px; border-radius:50%; background:var(--green); margin-right:6px; vertical-align:middle; }
+  .player-card .pbudget{ font-family:'SF Mono',monospace; font-size:19px; color:var(--rust); white-space:nowrap; }
+  .player-card .psub{ font-size:11.5px; color:var(--ink-soft); margin-top:1px; }
+  .budget-track{ height:6px; border-radius:4px; background:var(--cream-dark); margin:10px 0 8px; overflow:hidden; }
+  .budget-fill{ height:100%; border-radius:4px; background:linear-gradient(90deg,#C1543C,#c99a3f,#4c7a5a); transition:width .35s ease; }
+  .player-card .item-row{ display:flex; justify-content:space-between; align-items:baseline; font-size:13px; padding:6px 0; border-bottom:1px solid var(--line); gap:8px; }
+  .player-card .item-row:last-child{ border-bottom:none; }
+  .player-card .item-row .iname{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .player-card .item-row .iprice{ font-family:'SF Mono',monospace; color:var(--ink-soft); white-space:nowrap; }
+  .player-card .empty-note{ color:var(--ink-soft); font-style:italic; font-size:13px; padding:4px 0 2px; }
+
+  /* Judgment card (results) */
+  .judgment-card{ background:#fffdf8; border:2px solid var(--ink); border-radius:12px; padding:16px; margin-top:6px; }
+  .judgment-card .jhead{ display:flex; align-items:center; gap:10px; margin-bottom:10px; }
+  .judgment-card h2{ margin:0; font-size:21px; }
+  .pill{ font-size:11.5px; font-weight:700; padding:4px 11px; border-radius:20px; background:var(--green); color:#fff; white-space:nowrap; }
+  .pill.tie{ background:var(--ink-soft); }
+  .judgment-text{ font-size:14.5px; line-height:1.55; color:var(--ink); }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <div class="masthead">
+    <h1>Build Your <span class="blank">Best</span> ___</h1>
+    <p>a live auction party game</p>
+  </div>
+
+  <!-- HOME SCREEN -->
+  <div class="screen active" id="screen-home">
+    <div class="card hidden" id="rematch-bar" style="background:#fdf1ec; border-color:var(--rust);">
+      <div style="font-weight:700; margin-bottom:6px;">🔁 Rematch — pick a theme, same room code</div>
+      <button class="btn btn-primary" id="btn-start-rematch">Start Rematch</button>
+      <button class="btn btn-ghost" id="btn-cancel-rematch">cancel rematch</button>
+    </div>
+    <div class="section-label">choose a theme</div>
+    <div class="theme-grid" id="theme-grid"></div>
+
+    <div class="card" id="custom-theme-card">
+      <div style="font-weight:700; margin-bottom:8px;">✏️ Or type your own</div>
+      <input type="text" id="custom-theme-input" placeholder="e.g. Coffee Shop, Road Trip, Treehouse" maxlength="40">
+      <button class="btn btn-secondary" id="btn-use-custom">Use this theme</button>
+    </div>
+
+    <div class="section-label" id="mode-select-label">how do you want to play</div>
+    <div class="card" id="mode-select-card">
+      <button class="btn btn-primary" id="btn-practice">🤖 Practice vs AI</button>
+      <button class="btn btn-secondary" id="btn-create-room">🌐 Create Online Room</button>
+      <button class="btn btn-secondary" id="btn-join-room">🔑 Join Room with Code</button>
+    </div>
+    <p class="footer-note">$20 budget · 5 items · highest bid wins the lot</p>
+  </div>
+
+  <!-- JOIN / NICKNAME SCREEN -->
+  <div class="screen" id="screen-nickname">
+    <h2 class="serif">Before we start…</h2>
+    <div class="card">
+      <div id="nickname-context" style="margin-bottom:10px; font-size:14px; color:var(--ink-soft);"></div>
+      <input type="text" id="nickname-input" placeholder="Your nickname" maxlength="16">
+      <div id="join-code-wrap" class="hidden">
+        <input type="text" id="join-code-input" placeholder="ROOM CODE" maxlength="5" style="margin-top:10px; text-transform:uppercase; letter-spacing:4px; text-align:center;">
+      </div>
+      <div id="host-mode-wrap" class="hidden">
+        <div class="btn-row" style="margin-top:10px;">
+          <button class="btn btn-secondary" data-hostmode="2p" id="btn-mode-2p">2-Player Room</button>
+          <button class="btn btn-secondary" data-hostmode="3p" id="btn-mode-3p">3-Player (Hosted)</button>
+        </div>
+      </div>
+      <button class="btn btn-primary" id="btn-nickname-continue">Continue</button>
+      <button class="btn btn-ghost" id="btn-nickname-back">← back</button>
+    </div>
+  </div>
+
+  <!-- LOBBY SCREEN -->
+  <div class="screen" id="screen-lobby">
+    <h2 class="serif center">Waiting Room</h2>
+    <div class="card center">
+      <div id="lobby-role-note" style="font-size:13px; color:var(--ink-soft); margin-bottom:6px;"></div>
+      <div class="room-code" id="lobby-code">-----</div>
+      <button class="btn btn-secondary" id="btn-copy-code" style="margin-top:0;">📋 Copy code</button>
+      <p style="font-size:13px; color:var(--ink-soft);">Share this code with the other player<span id="lobby-plural"></span>.</p>
+      <div id="lobby-players" style="margin:14px 0;"></div>
+      <div class="waiting-note" id="lobby-waiting">Waiting for players to join…</div>
+      <button class="btn btn-ghost" id="btn-lobby-leave">← leave room</button>
+    </div>
+  </div>
+
+  <!-- DRAFT SCREEN -->
+  <div class="screen" id="screen-draft">
+    <div class="status-line" id="status-line"></div>
+    <div id="host-watch-note" class="waiting-note hidden">You're hosting — sit back and watch the bidding.</div>
+
+    <div id="draft-active-area">
+      <div class="lot-card" id="lot-card">
+        <div class="cat" id="lot-cat"></div>
+        <div class="name" id="lot-name">—</div>
+        <div class="stars" id="lot-stars"></div>
+      </div>
+      <div class="bid-display" id="bid-display">$0<span class="by" id="bid-by"></span></div>
+      <div class="ticker" id="ticker"></div>
+
+      <div id="bid-controls">
+        <input type="number" id="bid-amount-input" inputmode="numeric" class="bid-amount-input">
+        <div class="btn-row" style="margin-top:10px;">
+          <button class="btn btn-raise" id="btn-submit-bid">Raise</button>
+          <button class="btn btn-skip" id="btn-secondary-bid">Pass</button>
+        </div>
+        <div class="bid-caption" id="bid-caption">You have $20 left.</div>
+      </div>
+      <div id="waiting-turn" class="waiting-note hidden">Waiting for the other player…</div>
+    </div>
+
+    <div class="section-label">players</div>
+    <div class="stall-row" id="stall-row"></div>
+  </div>
+
+  <!-- RESULTS SCREEN -->
+  <div class="screen" id="screen-results">
+    <div id="results-card">
+      <h2 class="serif" id="results-title">Results</h2>
+      <div class="subhead" id="results-subhead"></div>
+      <div id="pitches-wrap"></div>
+      <div id="picks-wrap"></div>
+      <div id="flavor-wrap"></div>
+    </div>
+    <button class="btn btn-primary" id="btn-save-image">📸 Save as Image</button>
+    <div class="btn-row">
+      <button class="btn btn-secondary" id="btn-rematch">🔁 Rematch (same room)</button>
+      <button class="btn btn-secondary" id="btn-home">🏠 New Game</button>
+    </div>
+  </div>
+
+  <div class="footer-note" id="footer-debug-trigger">Build Your Best ___ · offline judge, no AI API required</div>
+
+  <div id="debug-panel" class="hidden">
+    <div class="debug-panel-head">
+      <b>Debug Log</b>
+      <div>
+        <button id="btn-debug-copy">Copy</button>
+        <button id="btn-debug-clear">Clear</button>
+        <button id="btn-debug-close">✕</button>
+      </div>
+    </div>
+    <div id="debug-log-content">No errors caught yet.</div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script>
+/* ============ ON-PAGE DEBUG CONSOLE ============ */
+/* Tap the footer text 5x to open. Catches errors the alert()s elsewhere in
+   this file don't cover — anything that throws outside a try/catch. */
+window.__debugLog = [];
+function debugLog(msg){
+  const ts = new Date().toLocaleTimeString();
+  window.__debugLog.push({ts, msg});
+  if(window.__debugLog.length>200) window.__debugLog.shift();
+  const content = document.getElementById('debug-log-content');
+  if(content){
+    content.innerHTML = window.__debugLog.map(e=>`<div class="debug-entry"><span class="ts">${e.ts}</span> ${e.msg.replace(/[<>]/g,c=>c==='<'?'&lt;':'&gt;')}</div>`).join('') || 'No errors caught yet.';
+  }
+}
+window.addEventListener('error', (e)=>{
+  debugLog(`JS Error: ${e.message} (${(e.filename||'').split('/').pop()}:${e.lineno})`);
+});
+window.addEventListener('unhandledrejection', (e)=>{
+  const reason = e.reason && (e.reason.message || e.reason.toString ? e.reason.toString() : e.reason);
+  debugLog(`Unhandled promise rejection: ${reason}`);
+});
+
+/* ============ DATA ============ */
+const THEMES = {
+backyard:{emoji:'🏡',name:'Backyard',items:[
+ ['In-ground swimming pool',9],['Full outdoor kitchen with built-in grill',8],['Fire pit with stone seating',7],
+ ['Trampoline',5],['Hot tub',8],['Treehouse',6],['Hammock between two oak trees',5],['Outdoor pizza oven',7],
+ ['Basketball hoop',5],['Vegetable garden beds',4],['String lights across the patio',4],['Zip line',6],
+ ['Putting green',6],['Gazebo with curtains',6],['Chicken coop',4],['Koi pond',6],
+ ['Outdoor movie screen and projector',7],['Sandbox',3],['Badminton net',3],['Greenhouse',5],
+ ['Fenced dog run',4],['Adirondack chairs, set of four',3]]},
+gaming:{emoji:'🎮',name:'Gaming Room',items:[
+ ['4K OLED TV mounted on the wall',8],['Custom gaming PC with RGB lighting',9],['Full arcade cabinet',8],
+ ['Racing simulator rig with force feedback wheel',8],['Massage gaming chair',6],
+ ['Retro console shelf (NES, SNES, N64)',5],['VR headset and play space',7],['Surround sound speaker system',6],
+ ['Mini fridge stocked with drinks',4],['LED strip lighting',3],['Pinball machine',7],['Foosball table',5],
+ ['Wall of framed game art',4],['Streaming setup with green screen',6],['Bean bag chairs',2],
+ ['Snack bar counter',4],['Soundproofing panels',5],['Ping pong table',4],['Poster of a favorite game',2],
+ ['Bluetooth controller charging station',3]]},
+bunker:{emoji:'🛡️',name:'Underground Bunker',items:[
+ ['Blast door entrance',8],['Air filtration and ventilation system',8],['Backup diesel generator',7],
+ ['Freeze-dried food pantry, one-year supply',7],['Water purification system',7],
+ ['Medical bay with first-aid supplies',6],['Bunk beds for six',5],['Solar panel array',7],
+ ['Ham radio communication station',6],['Gun safe with security lock',6],['Hydroponic grow room',6],
+ ['Reinforced concrete walls',6],['Composting toilet',3],['Board game and book library',3],
+ ['Water storage tanks',5],['Escape tunnel',7],['Security camera system',5],['Workshop with hand tools',4],
+ ['Rec room with a pool table',4],['Emergency battery bank',5]]},
+vacation:{emoji:'🏝️',name:'Perfect Vacation',items:[
+ ['Overwater bungalow in Bora Bora',9],['Private chef for the week',7],['First-class flights',7],
+ ['Helicopter tour over the coastline',6],['Scuba diving excursion',6],
+ ['Beachfront villa with an infinity pool',8],['Spa day with a full-body massage',5],
+ ['Guided hike to a waterfall',4],['Sunset sailing cruise',5],['Local cooking class',3],
+ ['Rooftop dinner reservation',4],['Rental convertible for the trip',5],['Snorkeling with sea turtles',6],
+ ['Overnight stay in a treehouse resort',5],['Street food tour',3],['Museum and gallery pass',3],
+ ['Hot air balloon ride at sunrise',6],['Beachside hammock and a good book',2],
+ ['Souvenir shopping afternoon',2],['Late checkout upgrade',2]]},
+superhero:{emoji:'🦸',name:'Superhero Draft',items:[
+ ['Flight',9],['Super strength',8],['Telepathy',7],['Invisibility',6],['Super speed',8],
+ ['Regeneration / healing factor',8],['Energy blasts',7],['Time manipulation',9],['Shapeshifting',6],
+ ['Telekinesis',7],['X-ray vision',4],['Elemental control (fire and ice)',6],['Force field projection',6],
+ ['Enhanced senses',4],['Weather control',6],['Teleportation',8],['Sidekick partner',3],
+ ['High-tech utility belt',4],['Signature costume with a cape',2],['Secret hideout lair',4],
+ ['Loyal sidekick vehicle',3],['Catchphrase and a theme song',2]]},
+perfectlife:{emoji:'✨',name:'Perfect Life',items:[
+ ['Financially independent, no debt',9],['Loving, supportive close friends',8],
+ ['Dream career doing meaningful work',8],['Excellent health into old age',9],['A house you truly love',7],
+ ['Strong, happy marriage',8],['Time for hobbies every week',5],['World travel every year',6],
+ ['A dog that adores you',5],['Skill mastery in something creative',5],
+ ['A big garden to grow food in',4],['Weekly family dinners',4],['A reliable, comfortable car',3],
+ ['Quiet mornings with good coffee',3],['A book club you love',2],['Season tickets to your favorite team',3],
+ ['A well-stocked home library',3],['A standing Friday night tradition',2],['Neighbors who become friends',3],
+ ['A garden shed workshop',2]]},
+fruit:{emoji:'🍑',name:'Best Fruit',items:[
+ ['Mango',8],['Strawberry',7],['Pineapple',7],['Watermelon',6],['Grapes',6],['Blueberries',7],['Peach',6],
+ ['Cherries',7],['Dragon fruit',6],['Banana',5],['Apple',5],['Kiwi',5],['Raspberry',6],['Pomegranate',6],
+ ['Orange',5],['Fig',5],['Lychee',6],['Cantaloupe',4]]},
+movies:{emoji:'🎬',name:'Best Movies',items:[
+ ['The Godfather',9],['The Shawshank Redemption',9],['Jurassic Park',7],['The Dark Knight',8],
+ ['Pulp Fiction',8],['Titanic',7],['Inception',8],['Forrest Gump',7],['The Matrix',8],['Jaws',7],
+ ['Back to the Future',6],['Gladiator',6],['The Lion King',6],['Toy Story',6],['Casablanca',6],
+ ['Goodfellas',7],['Parasite',7],['The Grand Budapest Hotel',5],['La La Land',5],['Rocky',5]]},
+tvshows:{emoji:'📺',name:'Best TV Shows',items:[
+ ['Breaking Bad',9],['The Sopranos',8],['The Wire',8],['Game of Thrones',7],['Friends',6],['The Office',6],
+ ['Stranger Things',6],['Seinfeld',6],['The Crown',5],['Better Call Saul',7],['Chernobyl',6],['Fargo',6],
+ ['Succession',7],['The Bear',6],['True Detective',6],['Cheers',4],['Parks and Recreation',5],
+ ['Curb Your Enthusiasm',5],['The West Wing',5],['Ted Lasso',5]]},
+music:{emoji:'🎤',name:'Best Music Artists',items:[
+ ['The Beatles',9],['Beyoncé',8],['Michael Jackson',9],['Taylor Swift',8],['Kendrick Lamar',8],['Queen',8],
+ ['Stevie Wonder',8],['Adele',6],['Prince',8],['Rihanna',6],['Radiohead',6],['Bob Dylan',7],
+ ['Whitney Houston',7],['Kanye West',6],['Nirvana',6],['Fleetwood Mac',6],['Frank Ocean',5],['Daft Punk',5],
+ ['Amy Winehouse',6],['The Rolling Stones',7]]}
+};
+
+const CUSTOM_ADJ = ['Vintage {T}','Luxury {T}','Limited-Edition {T}','Handcrafted {T}','Deluxe {T}','Rare {T}'];
+const CUSTOM_FEAT = ['{T} with a secret menu','{T} signed by its creator','{T} with a lifetime warranty',
+ '{T} featured in a magazine','{T} with a hidden compartment','{T} built by local artisans',
+ '{T} with a members-only waitlist','{T} that took a year to make'];
+const CUSTOM_FILLER = ['A basic {t} starter kit','A gently used {t}','An entry-level {t}','A {t} sample pack',
+ 'A no-frills {t}','A budget {t}','A secondhand {t}','A travel-size {t}'];
+
+const FOOTBALL = {
+ pool:{
+  GK:[['Alisson Becker',9],['Ederson',8],['Thibaut Courtois',9],['Marc-André ter Stegen',8],
+      ['Gianluigi Donnarumma',8],['Emiliano Martínez',8],['Jan Oblak',8],['Mike Maignan',8],
+      ['Yassine Bounou',7],['David Raya',7],['André Onana',7],['Nick Pope',7],['Bernd Leno',6],
+      ['Robert Sánchez',6],['Diogo Costa',7]],
+  DEF:[['Virgil van Dijk',9],['Rúben Dias',9],['William Saliba',8],['Antonio Rüdiger',8],['Achraf Hakimi',8],
+      ['Trent Alexander-Arnold',8],['Alphonso Davies',8],['Theo Hernández',8],['Josko Gvardiol',8],
+      ['Kim Min-jae',7],['Marquinhos',8],['Éder Militão',7],['John Stones',7],['Kyle Walker',7],
+      ['Jules Koundé',7],['Dayot Upamecano',7],['Manuel Akanji',7],['Ben White',6],['Cristian Romero',7],
+      ['Lisandro Martínez',7],['Milan Škriniar',7],['Gabriel Magalhães',7],['Nathan Aké',6],['Reece James',7],
+      ['Alessandro Bastoni',8],['Federico Dimarco',7],['Nuno Mendes',7],['Raphaël Varane',7],
+      ['Pau Torres',6],['Ronald Araújo',7]],
+  MID:[['Kevin De Bruyne',9],['Jude Bellingham',9],['Rodri',9],['Bukayo Saka',9],['Pedri',8],['Gavi',7],
+      ['Federico Valverde',8],['Martin Ødegaard',8],['Bruno Fernandes',8],['Declan Rice',8],['Vitinha',7],
+      ['Frenkie de Jong',7],['Jamal Musiala',8],['Florian Wirtz',8],['Enzo Fernández',7],
+      ['Moisés Caicedo',7],['Alexis Mac Allister',7],['Aurélien Tchouaméni',7],['Eduardo Camavinga',7],
+      ['Nicolò Barella',7],['Sandro Tonali',7],['Ismaël Bennacer',6],['Fabián Ruiz',6],['Marco Verratti',7],
+      ['İlkay Gündoğan',7],['Casemiro',7],['Christian Eriksen',6],['Dominik Szoboszlai',7],
+      ['Joshua Kimmich',8],['Leon Goretzka',6]],
+  ATT:[['Erling Haaland',10],['Kylian Mbappé',10],['Vinícius Júnior',9],['Harry Kane',9],['Mohamed Salah',9],
+      ['Lautaro Martínez',8],['Victor Osimhen',8],['Ousmane Dembélé',8],['Rafael Leão',7],
+      ['Khvicha Kvaratskhelia',8],['Phil Foden',8],['Julian Álvarez',7],['Randal Kolo Muani',6],
+      ['Marcus Rashford',6],['Darwin Núñez',6],['Serhou Guirassy',6],['Alexander Isak',8],
+      ['Ollie Watkins',6],['Cody Gakpo',6],['Nicolas Jackson',6],['Gabriel Jesus',6],['Dušan Vlahović',6],
+      ['Federico Chiesa',6],['Kingsley Coman',6]]
+ },
+ icons:{
+  GK:[['Gianluigi Buffon',9],['Iker Casillas',9],['Petr Čech',9],['Manuel Neuer',9],['Edwin van der Sar',8],
+      ['Oliver Kahn',9],['José Luis Chilavert',8],['David Seaman',8]],
+  DEF:[['Paolo Maldini',10],['Franco Baresi',9],['Cafu',9],['Roberto Carlos',9],['Sergio Ramos',9],
+      ['Fabio Cannavaro',9],['Ashley Cole',8],['Philipp Lahm',9]],
+  MID:[['Zinedine Zidane',10],['Andrea Pirlo',9],['Xavi Hernández',9],['Andrés Iniesta',9],
+      ['Steven Gerrard',9],['Frank Lampard',8],['Michael Ballack',8],['Paul Scholes',8]],
+  ATT:[['Pelé',10],['Diego Maradona',10],['Ronaldo Nazário',10],['Thierry Henry',9],['Ronaldinho',9],
+      ['Zlatan Ibrahimović',9],['Didier Drogba',8],['Alan Shearer',8]]
+ }
+};
+const FOOTBALL_CATS = ['GK','DEF','MID','ATT'];
+const FOOTBALL_REQUIRED = {GK:1,DEF:1,MID:2,ATT:1};
+
+/* ============ UTILS ============ */
+const $ = id => document.getElementById(id);
+const rnd = (a,b) => Math.floor(Math.random()*(b-a+1))+a;
+const pick = arr => arr[Math.floor(Math.random()*arr.length)];
+function shuffle(arr){ const a=arr.slice(); for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a; }
+function stars(r){ const full=Math.round(r/2); return '★'.repeat(full)+'☆'.repeat(5-full)+' ('+r+'/10)'; }
+function roomCodeGen(){ const chars='ABCDEFGHJKMNPQRSTUVWXYZ23456789'; let s=''; for(let i=0;i<5;i++) s+=chars[rnd(0,chars.length-1)]; return s; }
+function escapeHtml(s){ return String(s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+/* ============ SOUND (Web Audio, synthesized) ============ */
+let actx = null;
+function audioCtx(){ if(!actx){ try{ actx = new (window.AudioContext||window.webkitAudioContext)(); }catch(e){} } return actx; }
+function playTone(freq, dur, type, gainStart){
+  const ctx = audioCtx(); if(!ctx) return;
+  const osc = ctx.createOscillator(); const gain = ctx.createGain();
+  osc.type = type||'sine'; osc.frequency.value = freq;
+  gain.gain.setValueAtTime(gainStart||0.2, ctx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime+dur);
+  osc.connect(gain); gain.connect(ctx.destination);
+  osc.start(); osc.stop(ctx.currentTime+dur);
+}
+function sndGavel(){ const ctx=audioCtx(); if(!ctx) return; playTone(90,0.28,'square',0.25); setTimeout(()=>playTone(70,0.2,'square',0.18),90); }
+function sndCoin(){ playTone(880,0.09,'triangle',0.18); setTimeout(()=>playTone(1320,0.12,'triangle',0.18),80); setTimeout(()=>playTone(1760,0.16,'triangle',0.15),160); }
+function sndClick(){ playTone(440,0.05,'sine',0.08); }
+
+/* ============ CONFETTI (DOM/CSS, no library) ============ */
+function confettiBurst(){
+  const colors=['#C1543C','#c99a3f','#4c7a5a','#2B2620','#EAE1CE'];
+  for(let i=0;i<40;i++){
+    const p = document.createElement('div');
+    p.className='confetti-piece';
+    p.style.left = (40+Math.random()*20)+'vw';
+    p.style.background = pick(colors);
+    p.style.transform = `rotate(${rnd(0,360)}deg)`;
+    const dur = 1.1+Math.random()*0.9;
+    const drift = (Math.random()-0.5)*220;
+    p.style.transition = `transform ${dur}s cubic-bezier(.25,.46,.45,.94), top ${dur}s linear, opacity ${dur}s linear`;
+    document.body.appendChild(p);
+    requestAnimationFrame(()=>{
+      p.style.top = '104vh';
+      p.style.transform = `translateX(${drift}px) rotate(${rnd(180,900)}deg)`;
+      p.style.opacity='0.15';
+    });
+    setTimeout(()=>p.remove(), dur*1000+150);
+  }
 }
 
-function buildFootballQueue(cat){
+/* ============ SCREEN NAV ============ */
+function showScreen(id){
+  const target = $(id);
+  if(target.classList.contains('active')) return; // already showing — don't yank scroll position
+  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+  target.classList.add('active');
+  window.scrollTo(0,0);
+}
+
+/* ============ GLOBAL APP STATE ============ */
+const App = {
+  mode: null,          // 'practice' | 'online'
+  hostMode: null,      // '2p' | '3p'  (online)
+  role: null,          // 'creator' | 'joiner' | 'host' (online)
+  nickname: '',
+  themeKey: null,       // key into THEMES, or 'football', or 'custom'
+  customTheme: null,    // {name, items:[[name,rating],...]}
+  roomCode: null,
+  pollTimer: null,
+  lastRoomVersion: null,
+  practice: null,       // practice session object
+  pendingJoinAfterNick: null
+};
+
+/* ============ HOME SCREEN: theme grid ============ */
+function renderThemeGrid(){
+  const grid = $('theme-grid');
+  grid.innerHTML='';
+  const entries = Object.entries(THEMES);
+  entries.forEach(([key,t])=>{
+    const chip = document.createElement('div');
+    chip.className='theme-chip'; chip.dataset.key=key;
+    chip.innerHTML = `<span class="emoji">${t.emoji}</span><span class="name">${t.name}</span>`;
+    chip.onclick = ()=>selectTheme(key);
+    grid.appendChild(chip);
+  });
+  const fb = document.createElement('div');
+  fb.className='theme-chip'; fb.dataset.key='football';
+  fb.innerHTML = `<span class="emoji">⚽</span><span class="name">5-a-Side Draft</span>`;
+  fb.onclick = ()=>selectTheme('football');
+  grid.appendChild(fb);
+}
+function selectTheme(key){
+  App.themeKey = key; App.customTheme = null;
+  document.querySelectorAll('.theme-chip').forEach(c=>c.classList.toggle('selected', c.dataset.key===key));
+  $('custom-theme-input').value='';
+  sndClick();
+}
+function useCustomTheme(){
+  const raw = $('custom-theme-input').value.trim();
+  if(!raw) return;
+  App.customTheme = { name: raw, items: generateCustomItems(raw) };
+  App.themeKey = 'custom';
+  document.querySelectorAll('.theme-chip').forEach(c=>c.classList.remove('selected'));
+  sndClick();
+  $('custom-theme-input').style.borderColor='var(--rust)';
+}
+function titleCase(s){ return s.replace(/\w\S*/g, t=>t[0].toUpperCase()+t.slice(1)); }
+function generateCustomItems(raw){
+  const t = raw.trim(); const T = titleCase(t); const low = t.toLowerCase();
+  const items = [];
+  const usedAdj = shuffle(CUSTOM_ADJ).slice(0,6);
+  const usedFeat = shuffle(CUSTOM_FEAT).slice(0,7);
+  const usedFill = shuffle(CUSTOM_FILLER).slice(0,7);
+  usedAdj.forEach(tpl=> items.push([tpl.replace('{T}',T), rnd(6,9)]));
+  usedFeat.forEach(tpl=> items.push([tpl.replace('{T}',T), rnd(6,9)]));
+  usedFill.forEach(tpl=> items.push([tpl.replace('{t}',low), rnd(3,5)]));
+  return items;
+}
+function currentThemeObj(){
+  if(App.themeKey==='football') return {emoji:'⚽', name:'5-a-Side Draft', football:true};
+  if(App.themeKey==='custom') return {emoji:'✏️', name:App.customTheme.name, items:App.customTheme.items};
+  return THEMES[App.themeKey];
+}
+
+/* ============ NICKNAME SCREEN ============ */
+function goNickname(purpose){
+  // purpose: 'create2p' | 'create3p' | 'join'
+  App._nickPurpose = purpose;
+  $('nickname-input').value = App.nickname || '';
+  $('join-code-wrap').classList.toggle('hidden', purpose!=='join');
+  $('host-mode-wrap').classList.toggle('hidden', purpose!=='choose');
+  let ctx = '';
+  if(purpose==='join') ctx = 'Enter the room code your friend shared, then pick a nickname.';
+  else if(purpose==='choose') ctx = 'Choose how many players, then pick a nickname.';
+  $('nickname-context').textContent = ctx;
+  showScreen('screen-nickname');
+}
+$('btn-create-room').onclick = ()=>{
+  if(!App.themeKey){ alert('Pick a theme first!'); return; }
+  App._nickPurpose='choose'; App.hostMode=null;
+  goNickname('choose');
+};
+$('btn-join-room').onclick = ()=> goNickname('join');
+$('btn-practice').onclick = ()=>{
+  if(!App.themeKey){ alert('Pick a theme first!'); return; }
+  App.mode='practice';
+  startPracticeGame();
+};
+$('btn-mode-2p').onclick = ()=>{ App.hostMode='2p'; markHostModeBtn('2p'); };
+$('btn-mode-3p').onclick = ()=>{ App.hostMode='3p'; markHostModeBtn('3p'); };
+function markHostModeBtn(m){
+  $('btn-mode-2p').classList.toggle('btn-primary', m==='2p');
+  $('btn-mode-2p').classList.toggle('btn-secondary', m!=='2p');
+  $('btn-mode-3p').classList.toggle('btn-primary', m==='3p');
+  $('btn-mode-3p').classList.toggle('btn-secondary', m!=='3p');
+}
+$('btn-nickname-back').onclick = ()=> showScreen('screen-home');
+$('btn-nickname-continue').onclick = async ()=>{
+  const nick = $('nickname-input').value.trim().slice(0,16);
+  if(!nick){ alert('Please enter a nickname.'); return; }
+  const btn = $('btn-nickname-continue');
+  if(btn.disabled) return; // guard against double-tap / slow-network double-submit
+  btn.disabled = true; const origLabel = btn.textContent; btn.textContent = 'Joining…';
+  App.nickname = nick;
+  App.mode='online';
+  try{
+    if(App._nickPurpose==='join'){
+      const code = $('join-code-input').value.trim().toUpperCase();
+      if(code.length!==5){ alert('Room code should be 5 characters.'); return; }
+      App.roomCode = code; App.role='joiner';
+      await joinRoom();
+    } else {
+      if(!App.hostMode){ alert('Pick 2-Player or 3-Player.'); return; }
+      App.role = App.hostMode==='3p' ? 'host' : 'creator';
+      await createRoom();
+    }
+  } finally {
+    btn.disabled = false; btn.textContent = origLabel;
+  }
+};
+
+/* ============ NETWORKING ============ */
+async function api(action, payload){
+  let res;
+  try{
+    res = await fetch('/.netlify/functions/room', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(Object.assign({action, roomCode: App.roomCode}, payload||{}))
+    });
+  }catch(e){
+    throw new Error('Network error — check your connection ('+(e.message||'fetch failed')+')');
+  }
+  const raw = await res.text();
+  let data;
+  try{ data = raw ? JSON.parse(raw) : {}; }
+  catch(e){ data = null; }
+  if(!res.ok){
+    const msg = (data && (data.error || data.errorMessage || data.message))
+      || `Server error (HTTP ${res.status})${raw ? ': '+raw.slice(0,140) : ''}`;
+    throw new Error(msg);
+  }
+  return data || {};
+}
+function themePayload(){
+  if(App.themeKey==='football') return {themeKey:'football'};
+  if(App.themeKey==='custom') return {themeKey:'custom', customTheme:App.customTheme};
+  return {themeKey:App.themeKey};
+}
+async function createRoom(){
+  try{
+    const data = await api('create', { nickname: App.nickname, hostMode: App.hostMode, theme: themePayload() });
+    App.roomCode = data.room.code;
+    enterLobby(data.room);
+    startPolling();
+  }catch(e){ alert('Could not create room: '+e.message); showScreen('screen-home'); }
+}
+async function joinRoom(){
+  try{
+    const data = await api('join', { nickname: App.nickname });
+    enterLobby(data.room);
+    startPolling();
+  }catch(e){ alert('Could not join room: '+e.message); showScreen('screen-home'); }
+}
+function startPolling(){
+  if(App.pollTimer) clearInterval(App.pollTimer);
+  App.pollTimer = setInterval(pollRoom, 1000);
+  pollRoom();
+}
+function stopPolling(){ if(App.pollTimer){ clearInterval(App.pollTimer); App.pollTimer=null; } }
+async function pollRoom(){
+  try{
+    const data = await api('state', {});
+    renderRoomState(data.room);
+  }catch(e){ /* transient network hiccup, ignore */ }
+}
+
+/* ============ LOBBY ============ */
+function enterLobby(room){
+  showScreen('screen-lobby');
+  $('lobby-code').textContent = room.code;
+  $('lobby-plural').textContent = room.hostMode==='3p' ? 's' : '';
+  $('lobby-role-note').textContent = App.role==='host' ? "You're hosting — you'll watch, not bid."
+    : App.role==='creator' ? "Waiting for someone to join…" : "You're in!";
+  App.onlineBidLogSeen = 0;
+  App.lobbySeenNicks = null; // reset join-toast tracking for a fresh lobby
+  renderLobbyPlayers(room);
+}
+function renderLobbyPlayers(room){
+  const wrap = $('lobby-players');
+  const curNicks = room.players.map(p=>p.nickname);
+  if(App.lobbySeenNicks){
+    curNicks.forEach(n=>{
+      if(!App.lobbySeenNicks.includes(n) && n!==App.nickname) showJoinedToast(n);
+    });
+  }
+  App.lobbySeenNicks = curNicks;
+  wrap.innerHTML = room.players.map(p=>`<div style="padding:6px;">👤 <b>${escapeHtml(p.nickname)}</b> ${p.role==='host'?'<span class="badge">host</span>':''}</div>`).join('');
+  const needed = room.hostMode==='3p' ? 3 : 2;
+  $('lobby-waiting').textContent = room.players.length < needed ? `Waiting for players to join… (${room.players.length}/${needed})` : 'Everyone is in — starting…';
+}
+function showJoinedToast(nick){
+  const el = document.createElement('div');
+  el.className = 'free-toast variant-joined';
+  el.innerHTML = `👋<span class="sub">${escapeHtml(nick)} joined the room</span>`;
+  document.body.appendChild(el);
+  requestAnimationFrame(()=>el.classList.add('show'));
+  setTimeout(()=>el.remove(), 1500);
+}
+$('btn-lobby-leave').onclick = ()=>{ stopPolling(); App.roomCode=null; showScreen('screen-home'); };
+$('btn-copy-code').onclick = async ()=>{
+  const code = App.roomCode || $('lobby-code').textContent;
+  const btn = $('btn-copy-code'); const orig = btn.textContent;
+  try{
+    await navigator.clipboard.writeText(code);
+    btn.textContent = '✓ Copied!';
+  }catch(e){
+    btn.textContent = 'Long-press the code to copy';
+  }
+  setTimeout(()=>{ btn.textContent = orig; }, 1600);
+};
+
+/* ============ ROOM STATE RENDER DISPATCH ============ */
+function renderRoomState(room){
+  if(!room) return;
+  App.roomState = room;
+  if(room.phase==='lobby'){ enterLobby(room); return; }
+  if(room.phase==='drafting'){ showScreen('screen-draft'); renderOnlineDraft(room); return; }
+  if(room.phase==='results'){ showScreen('screen-results'); renderResultsFromRoom(room); return; }
+}
+
+/* ============ PRACTICE MODE ENGINE ============ */
+function startPracticeGame(){
+  const theme = currentThemeObj();
+  const P = {
+    isFootball: !!theme.football,
+    themeName: theme.name, themeEmoji: theme.emoji,
+    players: [
+      {nick:'You', budget:20, items:[], human:true},
+      {nick:'AI', budget:20, items:[], human:false}
+    ],
+    openerIndex: 0,
+    turn: 0,
+    currentLot: null,     // {name, r, cat}
+    currentBid: 0,
+    currentBidder: null,
+    tickerLog: [],
+    bidLog: [],           // {player, name, amount, cat} for flavor stats
+    skipsUsed: 0,
+    mode: 'idle',         // 'contested' | 'solo'
+    soloPlayer: null,
+    itemPool: null,       // for flat themes: shuffled remaining items [name,r]
+    footballCatIdx: 0,
+    footballCandidates: null // for current category: array of [name,r]
+  };
+  if(P.isFootball){
+    P.footballCandidates = buildFootballCandidateQueue(FOOTBALL_CATS[0]);
+  } else {
+    P.itemPool = shuffle(theme.items.slice());
+  }
+  App.practice = P;
+  showScreen('screen-draft');
+  $('host-watch-note').classList.add('hidden');
+  drawNextLotPractice();
+}
+
+function buildFootballCandidateQueue(cat){
   const iconsAll = shuffle(FOOTBALL.icons[cat].slice());
   const icons3 = iconsAll.slice(0,3);
-  const lead = icons3[0];
+  const leadIcon = icons3[0];
   const restIcons = icons3.slice(1);
   const poolShuffled = shuffle(FOOTBALL.pool[cat].slice());
   const rest = shuffle(restIcons.concat(poolShuffled));
-  return [lead].concat(rest);
-}
-
-function newGame(themeResolved){
-  const g = {
-    isFootball: !!themeResolved.football,
-    turnIdx: 0,
-    openerIdx: 0,
-    mode: 'idle',
-    currentLot: null,
-    currentBid: 0,
-    currentBidderIdx: null,
-    soloPlayerIdx: null,
-    skipsUsed: 0,
-    passStreak: 0,
-    tickerLog: [],
-    bidLog: [],
-    footballCatIdx: 0,
-    footballQueue: null,
-    itemPool: null
-  };
-  if (g.isFootball) {
-    g.footballQueue = buildFootballQueue(FOOTBALL_CATS[0]);
-  } else {
-    g.itemPool = shuffle(themeResolved.items.map(it => ({ name: it[0], r: it[1] })));
-  }
-  return g;
+  return [leadIcon].concat(rest);
 }
 
 function playerNeedsFlat(p){ return p.items.length < 5; }
-function playerNeedsCat(p, cat){ return p.items.filter(it => it.cat === cat).length < FOOTBALL_REQUIRED[cat]; }
+function playerNeedsCat(p, cat){ return p.items.filter(it=>it.cat===cat).length < FOOTBALL_REQUIRED[cat]; }
 
-function drawNextLot(room){
-  const g = room.game;
-  const bidders = room.players.filter(p => p.role !== 'host');
-  if (g.isFootball) {
-    let cat = FOOTBALL_CATS[g.footballCatIdx];
-    while (g.footballCatIdx < FOOTBALL_CATS.length && !bidders.some(p => playerNeedsCat(p, cat))) {
-      g.footballCatIdx++;
-      if (g.footballCatIdx >= FOOTBALL_CATS.length) { room.phase = 'results'; g.currentLot=null; return; }
-      cat = FOOTBALL_CATS[g.footballCatIdx];
-      g.footballQueue = buildFootballQueue(cat);
-      g.skipsUsed = 0;
-    }
-    const wanting = bidders.map((p,i)=>i).filter(i => playerNeedsCat(bidders[i], cat));
-    if (!wanting.length) { room.phase='results'; g.currentLot=null; return; }
-    let cand = g.footballQueue.shift();
-    if (!cand) { g.footballQueue = buildFootballQueue(cat); cand = g.footballQueue.shift(); }
-    g.currentLot = { name: cand[0], r: cand[1], cat };
-    startLotMode(g, wanting);
+function drawNextLotPractice(){
+  const P = App.practice;
+  // check end of game
+  if(P.isFootball){
+    if(P.footballCatIdx >= FOOTBALL_CATS.length){ return finishPractice(); }
   } else {
-    if (bidders.every(p => p.items.length >= 5)) { room.phase='results'; g.currentLot=null; return; }
-    const wanting = bidders.map((p,i)=>i).filter(i => playerNeedsFlat(bidders[i]));
-    if (!wanting.length) { room.phase='results'; g.currentLot=null; return; }
-    const next = g.itemPool.shift();
-    if (!next) { room.phase='results'; g.currentLot=null; return; }
-    g.currentLot = { name: next.name, r: next.r, cat: null };
-    startLotMode(g, wanting);
+    if(P.players.every(p=>p.items.length>=5)){ return finishPractice(); }
   }
-}
-function startLotMode(g, wanting){
-  if (wanting.length >= 2) {
-    g.mode = 'contested';
-    g.currentBid = 0; g.currentBidderIdx = null;
-    g.turnIdx = g.openerIdx;
-    g.tickerLog = [];
-    g.skipsUsed = 0;
-    g.passStreak = 0;
+
+  if(P.isFootball){
+    let cat = FOOTBALL_CATS[P.footballCatIdx];
+    while(!P.players[0] && false){} // no-op guard
+    // advance category if fully satisfied
+    while(P.footballCatIdx < FOOTBALL_CATS.length && !P.players.some(p=>playerNeedsCat(p,cat))){
+      P.footballCatIdx++;
+      if(P.footballCatIdx>=FOOTBALL_CATS.length){ return finishPractice(); }
+      cat = FOOTBALL_CATS[P.footballCatIdx];
+      P.footballCandidates = buildFootballCandidateQueue(cat);
+      P.skipsUsed = 0;
+    }
+    const wanting = [0,1].filter(i=>playerNeedsCat(P.players[i],cat));
+    const cand = drawFootballCandidate(P, cat);
+    if(!cand){ // ran out of candidates edge case; refill
+      P.footballCandidates = buildFootballCandidateQueue(cat);
+      return drawNextLotPractice();
+    }
+    P.currentLot = {name:cand[0], r:cand[1], cat:cat};
+    if(wanting.length===2){
+      startContestedLot(P);
+    } else {
+      startSoloLot(P, wanting[0]);
+    }
   } else {
-    g.mode = 'solo';
-    g.soloPlayerIdx = wanting[0];
-    g.currentBid = 0; g.currentBidderIdx = null;
-    g.skipsUsed = 0;
-    g.tickerLog = [];
+    const wanting = [0,1].filter(i=>playerNeedsFlat(P.players[i]));
+    if(wanting.length===0) return finishPractice();
+    const next = P.itemPool.shift();
+    if(!next) return finishPractice();
+    P.currentLot = {name:next[0], r:next[1], cat:null};
+    if(wanting.length===2){
+      startContestedLot(P);
+    } else {
+      startSoloLot(P, wanting[0]);
+    }
+  }
+  renderPracticeDraft();
+  triggerAiIfNeeded();
+}
+function triggerAiIfNeeded(){
+  const P = App.practice;
+  if(!P || !P.currentLot) return;
+  if(P.mode==='contested' && P.turn===1){
+    setTimeout(aiTakeTurn, 700);
+  } else if(P.mode==='solo' && P.soloPlayer===1){
+    setTimeout(aiSoloClaim, 700);
+  }
+}
+function aiSoloClaim(){
+  const P = App.practice;
+  if(!P || P.mode!=='solo' || P.soloPlayer!==1) return;
+  const ai = P.players[1];
+  const amount = ai.budget===0 ? 0 : 1;
+  resolveLotWinner(P, 1, amount);
+}
+function drawFootballCandidate(P, cat){
+  if(!P.footballCandidates || !P.footballCandidates.length) return null;
+  return P.footballCandidates.shift();
+}
+
+function startContestedLot(P){
+  P.mode='contested';
+  P.currentBid = 0; P.currentBidder = null;
+  P.turn = P.openerIndex;
+  P.tickerLog = [];
+  P.skipsUsed = 0;
+  P.passStreak = 0;
+}
+function unsoldLot(P){
+  P.mode='idle'; P.currentLot=null;
+  P.openerIndex = 1-P.openerIndex;
+  setTimeout(()=>drawNextLotPractice(), 400);
+}
+function startSoloLot(P, playerIdx){
+  P.mode='solo';
+  P.soloPlayer = playerIdx;
+  P.currentBid = 0; P.currentBidder = null;
+  P.skipsUsed = 0;
+  P.tickerLog = [];
+}
+
+function resolveLotWinner(P, winnerIdx, amount){
+  const player = P.players[winnerIdx];
+  player.budget -= amount;
+  const lotName = P.currentLot.name;
+  const rec = {name:lotName, r:P.currentLot.r, cat:P.currentLot.cat, paid:amount};
+  player.items.push(rec);
+  P.bidLog.push({player:winnerIdx, name:lotName, amount, cat:P.currentLot.cat});
+  recordHumanBidToServer(winnerIdx, P);
+  sndGavel();
+  setTimeout(()=>showItemWonToast(player.nick, lotName, amount), 260);
+  let delay;
+  if(amount<=2){
+    setTimeout(()=>{ sndCoin(); confettiBurst(); }, 260);
+    delay = 1700;
+  } else {
+    delay = 1300;
+  }
+  P.openerIndex = 1-P.openerIndex;
+  P.mode='idle'; P.currentLot=null;
+  setTimeout(()=>drawNextLotPractice(), delay);
+}
+function showItemWonToast(nick, itemName, amount){
+  const el = document.createElement('div');
+  let variant, headline, priceLine;
+  if(amount===0){ variant='variant-free'; headline='🎉 FREE!'; priceLine='for nothing'; }
+  else if(amount<=2){ variant='variant-steal'; headline='💰 Steal!'; priceLine=`for just $${amount}`; }
+  else { variant='variant-sold'; headline='✓ Sold!'; priceLine=`for $${amount}`; }
+  el.className = 'free-toast ' + variant;
+  el.innerHTML = `${headline}<span class="sub">${escapeHtml(nick)} got ${escapeHtml(itemName)} ${priceLine}</span>`;
+  document.body.appendChild(el);
+  requestAnimationFrame(()=>el.classList.add('show'));
+  const life = variant==='variant-sold' ? 1300 : 1750;
+  setTimeout(()=>el.remove(), life);
+}
+function recordHumanBidToServer(winnerIdx, P){
+  if(winnerIdx!==0) return; // only record human (You) raises
+  try{
+    fetch('/.netlify/functions/ai-prefs', {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({action:'record', itemKey: (P.currentLot.cat||P.themeName)+'::'+P.currentLot.name, amount: P.currentBid})
+    }).catch(()=>{});
+  }catch(e){}
+}
+
+/* human actions */
+function humanRaise(amount){
+  const P = App.practice;
+  if(P.mode==='contested'){
+    P.currentBid = amount; P.currentBidder = 0;
+    P.passStreak = 0;
+    P.tickerLog.push(`You: $${amount}`);
+    P.turn = 1;
+    renderPracticeDraft();
+    setTimeout(aiTakeTurn, 550);
+  } else if(P.mode==='solo'){
+    resolveLotWinner(P, 0, amount);
+  }
+}
+function humanPass(){
+  const P = App.practice;
+  if(P.mode!=='contested') return;
+  if(P.currentBidder===null){
+    P.passStreak = (P.passStreak||0)+1;
+    if(P.passStreak>=2){ return unsoldLot(P); }
+    P.turn = 1;
+    renderPracticeDraft();
+    setTimeout(aiTakeTurn, 500);
+  } else {
+    resolveLotWinner(P, P.currentBidder, P.currentBid);
+  }
+}
+function humanSkip(){
+  const P = App.practice;
+  if(P.mode!=='solo') return;
+  P.skipsUsed++;
+  if(P.skipsUsed>=3){
+    const cand = P.isFootball ? drawFootballCandidate(P, P.currentLot.cat) : P.itemPool.shift();
+    if(cand){ P.currentLot = {name:cand[0], r:cand[1], cat:P.currentLot.cat}; }
+    resolveLotWinner(P, P.soloPlayer, P.players[P.soloPlayer].budget===0?0:1);
+    return;
+  }
+  const cand = P.isFootball ? drawFootballCandidate(P, P.currentLot.cat) : P.itemPool.shift();
+  if(!cand){ P.skipsUsed=3; return humanSkip(); }
+  P.currentLot = {name:cand[0], r:cand[1], cat:P.currentLot.cat};
+  renderPracticeDraft();
+}
+function humanClaim(amountStr){
+  const P = App.practice;
+  const budget = P.players[P.soloPlayer].budget;
+  let amount = budget===0 ? 0 : Math.max(1, Math.min(budget, parseInt(amountStr||'1',10)||1));
+  resolveLotWinner(P, P.soloPlayer, amount);
+}
+
+/* ============ AI LOGIC ============ */
+let aiPrefsCache = {};
+async function fetchAiPref(key){
+  if(aiPrefsCache[key]!==undefined) return aiPrefsCache[key];
+  try{
+    const res = await fetch('/.netlify/functions/ai-prefs', {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({action:'get', itemKey:key})});
+    const data = await res.json();
+    aiPrefsCache[key] = data && data.avg ? data.avg : null;
+    return aiPrefsCache[key];
+  }catch(e){ return null; }
+}
+async function aiTakeTurn(){
+  const P = App.practice;
+  if(!P || P.mode!=='contested' || P.turn!==1) return;
+  const ai = P.players[1];
+  const cur = P.currentBid;
+  const nextMin = cur+1;
+  if(ai.budget < nextMin){ aiPass(); return; }
+
+  const totalRemaining = 5 - ai.items.length;       // includes this pick
+  const futurePicksAfterThis = totalRemaining - 1;  // picks still needed AFTER this one
+  const reserve = futurePicksAfterThis;             // keep at least $1 per future required pick
+
+  let baseFrac;
+  if(totalRemaining<=1) baseFrac = 0.7 + Math.random()*0.3;
+  else{
+    const steps = {5:0.22,4:0.28,3:0.38,2:0.48};
+    baseFrac = steps[totalRemaining] || 0.4;
+  }
+  const ratingFactor = 0.67 + (P.currentLot.r-1)/9*(1.33-0.67);
+  const affordableCeiling = Math.max(0, ai.budget - reserve);
+  const organicCeiling = Math.min(affordableCeiling, Math.round(baseFrac*20*ratingFactor));
+
+  const key = (P.currentLot.cat||P.themeName)+'::'+P.currentLot.name;
+  const humanAvg = await fetchAiPref(key);
+  let ceiling = organicCeiling;
+  if(humanAvg){
+    // learned "market price" can nudge willingness up, but a single outlier bid
+    // can't blow the budget past a sane multiple of what the AI itself thinks is fair
+    const boosted = Math.round(humanAvg*1.1);
+    const softCap = Math.round(organicCeiling*1.5)+2;
+    ceiling = Math.max(organicCeiling, Math.min(affordableCeiling, boosted, softCap));
+  }
+
+  if(nextMin > ceiling){ aiPass(); return; }
+  const r = Math.random();
+  let inc = r<0.6?1: r<0.85?2:3;
+  let amount = Math.min(ai.budget, ceiling, cur+inc);
+  if(amount<=cur) amount = Math.min(ai.budget, cur+1);
+  if(amount>ai.budget || amount<=cur || amount>ceiling){ aiPass(); return; }
+
+  P.currentBid = amount; P.currentBidder = 1;
+  P.tickerLog.push(`AI: $${amount}`);
+  P.turn = 0;
+  renderPracticeDraft();
+}
+function aiPass(){
+  const P = App.practice;
+  if(P.currentBidder===null){
+    P.passStreak = (P.passStreak||0)+1;
+    if(P.passStreak>=2){ return unsoldLot(P); }
+    P.turn = 0;
+    renderPracticeDraft();
+  } else {
+    resolveLotWinner(P, P.currentBidder, P.currentBid);
+  }
+}
+function finishPractice(){
+  const P = App.practice;
+  showResultsScreen(P.players, P, App.themeKey==='football');
+}
+
+/* ============ PRACTICE DRAFT RENDER ============ */
+function renderPracticeDraft(){
+  const P = App.practice;
+  if(!P || !P.currentLot){ return; }
+  renderStalls(P.players, P.mode==='contested'?P.currentBidder:(P.mode==='solo'?P.soloPlayer:null), P.mode==='contested'?P.turn:null);
+
+  $('lot-cat').textContent = P.currentLot.cat ? roleLabel(P.currentLot.cat) : P.themeEmoji+' '+P.themeName;
+  $('lot-name').textContent = P.currentLot.name;
+  $('lot-stars').textContent = stars(P.currentLot.r);
+
+  $('bid-display').innerHTML = '$'+P.currentBid + (P.currentBidder!==null ? `<span class="by">— currently held by ${escapeHtml(P.players[P.currentBidder].nick)}</span>` : '');
+  $('ticker').textContent = P.tickerLog.length ? P.tickerLog.join(' → ') : 'New lot — place your bid';
+
+  $('waiting-turn').classList.add('hidden');
+  hideBidControls();
+
+  if(P.mode==='contested'){
+    $('status-line').textContent = P.turn===0 ? "Your turn — raise or pass" : "AI is thinking…";
+    if(P.turn===0){
+      renderBidControls({
+        budget: P.players[0].budget,
+        minAmount: P.currentBid+1,
+        primaryLabel: 'Raise',
+        secondaryLabel: 'Pass',
+        onPrimary: (amt)=>{ sndClick(); humanRaise(amt); },
+        onSecondary: ()=>{ sndClick(); humanPass(); }
+      });
+    } else {
+      $('waiting-turn').classList.remove('hidden');
+    }
+  } else if(P.mode==='solo'){
+    if(P.soloPlayer===0){
+      $('status-line').textContent = "Nobody else needs this — it's yours. Pay what you like, or skip.";
+      const budget = P.players[0].budget;
+      renderBidControls({
+        budget, minAmount:1, freeMode: budget===0,
+        primaryLabel: 'Claim',
+        secondaryLabel: `Skip it (${3-P.skipsUsed} left)`,
+        onPrimary: (amt)=>{ sndClick(); humanClaim(amt); },
+        onSecondary: ()=>{ sndClick(); humanSkip(); }
+      });
+    } else {
+      $('status-line').textContent = "AI doesn't need to compete for this one…";
+      $('waiting-turn').classList.remove('hidden');
+    }
   }
 }
 
-function resolveLotWinner(room, winnerIdx, amount){
+/* Unified horizontal bid-control widget: number input + Raise/Claim + Pass/Skip */
+function renderBidControls(opts){
+  $('bid-controls').classList.remove('hidden');
+  const input = $('bid-amount-input');
+  const primaryBtn = $('btn-submit-bid');
+  const secondaryBtn = $('btn-secondary-bid');
+  if(opts.freeMode){
+    input.classList.add('hidden');
+    primaryBtn.textContent = 'Claim (Free)';
+    primaryBtn.onclick = ()=>opts.onPrimary(0);
+  } else {
+    input.classList.remove('hidden');
+    input.min = opts.minAmount;
+    input.max = opts.budget;
+    input.value = Math.min(opts.minAmount, opts.budget);
+    primaryBtn.textContent = opts.primaryLabel;
+    primaryBtn.onclick = ()=>{
+      let amt = parseInt(input.value,10);
+      if(isNaN(amt) || amt<opts.minAmount) amt = opts.minAmount;
+      if(amt>opts.budget) amt = opts.budget;
+      opts.onPrimary(amt);
+    };
+  }
+  secondaryBtn.textContent = opts.secondaryLabel;
+  secondaryBtn.classList.toggle('hidden', !opts.secondaryLabel);
+  secondaryBtn.onclick = opts.onSecondary;
+  $('bid-caption').textContent = `You have $${opts.budget} left.`;
+}
+function hideBidControls(){
+  $('bid-controls').classList.add('hidden');
+}
+
+function roleLabel(cat){
+  return {GK:'⚽ Goalkeeper',DEF:'⚽ Defender',MID:'⚽ Midfielder',ATT:'⚽ Attacker'}[cat] || cat;
+}
+function playerCardHTML(nick, budget, items, opts){
+  opts = opts||{};
+  const pct = Math.max(0, Math.min(100, (budget/20)*100));
+  const dot = opts.turnActive ? '<span class="turn-dot"></span>' : '';
+  const rows = items.length
+    ? items.map(it=>`<div class="item-row"><span class="iname">${escapeHtml((it.name||'').split(',')[0])}</span><span class="iprice">${it.paid===0?'FREE':(it.paid!=null?'$'+it.paid:'')}</span></div>`).join('')
+    : `<div class="empty-note">Nothing yet</div>`;
+  return `<div class="player-card${opts.leading?' leading':''}">
+    <div class="prow"><span class="pname">${dot}${escapeHtml(nick)}</span><span class="pbudget mono">$${budget}</span></div>
+    <div class="psub">remaining · ${items.length}/5 items</div>
+    <div class="budget-track"><div class="budget-fill" style="width:${pct}%"></div></div>
+    ${rows}
+  </div>`;
+}
+function renderStalls(players, leadingIdx, turnIdx){
+  const row = $('stall-row'); row.innerHTML='';
+  players.forEach((p,i)=>{
+    row.innerHTML += playerCardHTML(p.nick, p.budget, p.items, {leading: leadingIdx===i, turnActive: turnIdx===i});
+  });
+}
+
+/* ============ ONLINE DRAFT RENDER ============ */
+function myPlayerIndex(room){
+  return room.players.findIndex(p=>p.nickname===App.nickname && p.role!=='host');
+}
+function renderOnlineDraft(room){
   const g = room.game;
-  const bidders = room.players.filter(p => p.role !== 'host');
-  const winner = bidders[winnerIdx];
-  winner.budget -= amount;
-  winner.items.push({ name: g.currentLot.name, r: g.currentLot.r, cat: g.currentLot.cat, paid: amount });
-  g.bidLog.push({ player: winnerIdx, name: g.currentLot.name, amount, cat: g.currentLot.cat });
-  g.openerIdx = 1 - g.openerIdx;
-  g.mode = 'idle'; g.currentLot = null;
-  drawNextLot(room);
-}
-function unsoldLot(room){
-  const g = room.game;
-  g.mode = 'idle'; g.currentLot = null;
-  g.openerIdx = 1 - g.openerIdx;
-  drawNextLot(room);
-}
+  if(!g){ return; }
+  const bidders = room.players.filter(p=>p.role!=='host');
 
-function sleep(ms){ return new Promise(r => setTimeout(r, ms)); }
-
-// Reads the room, lets mutateFn apply changes in place, then writes with an
-// ETag guard. Since we're on eventual consistency (see note above), a read
-// can return a version tag that's already stale by the time we write — that's
-// not a real conflict, just a propagation lag, so we re-read and reapply the
-// mutation a few times before giving up. mutateFn returns nothing on success,
-// or {status, error} for a genuine validation failure (never retried).
-async function readMutateWrite(s, code, mutateFn, opts){
-  opts = opts || {};
-  const maxAttempts = opts.maxAttempts || 4;
-  for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    let got = await s.getWithMetadata(code, { type: 'json' });
-    if (!got || !got.data) {
-      if (attempt < maxAttempts - 1) { await sleep(250 * (attempt + 1)); continue; }
-      return { status: 404, error: 'Room not found' };
+  if(g.bidLog){
+    if(App.onlineBidLogSeen===undefined || g.bidLog.length<App.onlineBidLogSeen) App.onlineBidLogSeen = 0;
+    if(g.bidLog.length>App.onlineBidLogSeen){
+      for(let i=App.onlineBidLogSeen;i<g.bidLog.length;i++){
+        const entry = g.bidLog[i];
+        if(!bidders[entry.player]) continue;
+        showItemWonToast(bidders[entry.player].nickname, entry.name, entry.amount);
+        sndGavel();
+        if(entry.amount<=2) setTimeout(()=>{ sndCoin(); confettiBurst(); }, 260);
+      }
+      App.onlineBidLogSeen = g.bidLog.length;
     }
-    const room = got.data;
-    const fail = mutateFn(room);
-    if (fail) return fail; // logical error — don't retry, it won't resolve itself
-    const ok = await s.setJSON(code, room, { onlyIfMatch: got.etag });
-    if (ok) return { room };
-    await sleep(200 * (attempt + 1));
   }
-  return { status: 409, error: 'Room changed, please retry' };
+
+  renderStalls(bidders.map(p=>({nick:p.nickname, budget:p.budget, items:p.items})),
+    g.currentBidderIdx, g.mode==='contested'?g.turnIdx:null);
+
+  const amHost = room.players.find(p=>p.nickname===App.nickname && p.role==='host');
+  $('host-watch-note').classList.toggle('hidden', !amHost);
+
+  if(!g.currentLot){
+    $('draft-active-area').classList.add('hidden');
+    $('status-line').textContent = 'Waiting for the next lot…';
+    return;
+  }
+  $('draft-active-area').classList.remove('hidden');
+  $('lot-cat').textContent = g.currentLot.cat ? roleLabel(g.currentLot.cat) : (room.theme.emoji||'🎯')+' '+room.theme.name;
+  $('lot-name').textContent = g.currentLot.name;
+  $('lot-stars').textContent = stars(g.currentLot.r);
+  $('bid-display').innerHTML = '$'+g.currentBid + (g.currentBidderIdx!==null && g.currentBidderIdx!==undefined ? `<span class="by">— currently held by ${escapeHtml(bidders[g.currentBidderIdx].nickname)}</span>` : '');
+  $('ticker').textContent = (g.tickerLog&&g.tickerLog.length) ? g.tickerLog.join(' → ') : 'New lot — place your bid';
+
+  $('waiting-turn').classList.add('hidden');
+  hideBidControls();
+
+  const myIdx = myPlayerIndex(room);
+  if(amHost){
+    $('status-line').textContent = g.mode==='contested' ? `${bidders[g.turnIdx].nickname}'s turn` : `${bidders[g.soloPlayerIdx].nickname} claims this one`;
+    $('waiting-turn').classList.remove('hidden');
+    $('waiting-turn').textContent = "You're watching this one play out.";
+    return;
+  }
+  if(g.mode==='contested'){
+    const myTurn = g.turnIdx===myIdx;
+    $('status-line').textContent = myTurn ? "Your turn — raise or pass" : `● Waiting for ${bidders[g.turnIdx].nickname} to respond…`;
+    if(myTurn){
+      renderBidControls({
+        budget: bidders[myIdx].budget,
+        minAmount: g.currentBid+1,
+        primaryLabel: 'Raise',
+        secondaryLabel: 'Pass',
+        onPrimary: (amt)=>onlineAction('raise',{amount:amt}),
+        onSecondary: ()=>onlineAction('pass',{})
+      });
+    } else {
+      $('waiting-turn').classList.remove('hidden');
+    }
+  } else if(g.mode==='solo'){
+    if(g.soloPlayerIdx===myIdx){
+      $('status-line').textContent = "Nobody else needs this — it's yours.";
+      const budget = bidders[myIdx].budget;
+      renderBidControls({
+        budget, minAmount:1, freeMode: budget===0,
+        primaryLabel: 'Claim',
+        secondaryLabel: `Skip it (${3-(g.skipsUsed||0)} left)`,
+        onPrimary: (amt)=>onlineAction('claim',{amount:amt}),
+        onSecondary: ()=>onlineAction('skip',{})
+      });
+    } else {
+      $('status-line').textContent = `${bidders[g.soloPlayerIdx].nickname} is claiming this one…`;
+      $('waiting-turn').classList.remove('hidden');
+    }
+  }
+}
+async function onlineAction(type, payload){
+  sndClick();
+  try{ await api(type, payload); pollRoom(); }
+  catch(e){ /* likely a version conflict from concurrent action; next poll will resync */ pollRoom(); }
 }
 
-exports.handler = async (event) => {
-  connectLambda(event);
-  if (event.httpMethod !== 'POST') return json(405, { error: 'Method not allowed' });
-  let body;
-  try { body = JSON.parse(event.body || '{}'); } catch(e){ return json(400, { error: 'Bad JSON' }); }
-  const { action } = body;
-  const s = store();
+/* ============ JUDGE ============ */
+const OPENER_TPL = ["Auction's over — time to judge.", "Bidding's done. Let's tally it up.", "That's the last lot. Here's the read."];
+const SPLURGE_TPL = ["No restraint from {p} — ${a} on {item} alone.", "{p} didn't blink at ${a} for {item}.", "Big spender alert: {p} paid ${a} for {item}."];
+const STEAL_TPL = ["{p} got {item} for pocket change — ${a}.", "{p} walked away with {item} for just ${a}.", "{p} snagged {item} at a bargain ${a}."];
+const FREEBIE_TPL = ["{n} item{s} came home completely free.", "{n} lucky freebie{s} made it into the final collections.", "{n} pick{s} cost absolutely nothing."];
+const WIN_TPL = ["{p} built the sharper collection — {a1} average vs {a2}.", "{p} simply rated higher across the board, {a1} to {a2}.", "{p} takes it, item for item — {a1} vs {a2}."];
+const TIE_TPL = ["Dead even — both collections rate exactly {a1} on average.", "Too close to call: an even split in quality, {a1} apiece."];
 
-  try {
-    if (action === 'create') {
-      const code = roomCodeGen();
-      const themeResolved = resolveThemeItems(body.theme || {});
-      const hostMode = body.hostMode === '3p' ? '3p' : '2p';
-      const room = {
-        code, hostMode, phase: 'lobby',
-        theme: { key: (body.theme&&body.theme.themeKey)||'backyard', name: themeResolved.name, emoji: themeResolved.emoji,
-                 football: themeResolved.football, items: themeResolved.items || null, custom: body.theme&&body.theme.customTheme || null },
-        players: [ { nickname: body.nickname, role: hostMode==='3p' ? 'host' : 'creator', budget: 20, items: [] } ],
-        game: null,
-        rev: 1
-      };
-      await s.setJSON(code, room);
-      return json(200, { room });
-    }
-
-    if (action === 'join') {
-      const code = body.roomCode;
-      if (!code) return json(400, { error: 'Missing room code' });
-      const result = await readMutateWrite(s, code, (room) => {
-        const needed = room.hostMode === '3p' ? 3 : 2;
-        if (room.players.some(p => p.nickname === body.nickname)) {
-          return { status: 400, error: `Nickname "${body.nickname}" is already in this room. Current players (${room.players.length}/${needed}): ${room.players.map(p=>`${p.nickname}[${p.role}]`).join(', ')}. Room phase: ${room.phase}.` };
-        }
-        if (room.players.length >= needed) {
-          return { status: 400, error: `Room is full (${room.players.length}/${needed}). Players already in: ${room.players.map(p=>`${p.nickname}[${p.role}]`).join(', ')}. Room phase: ${room.phase}, created for hostMode "${room.hostMode}".` };
-        }
-        room.players.push({ nickname: body.nickname, role: 'bidder', budget: 20, items: [] });
-        if (room.players.length === needed) {
-          room.phase = 'drafting';
-          room.game = newGame(resolveThemeItems({ themeKey: room.theme.key, customTheme: room.theme.custom }));
-          drawNextLot(room);
-        }
-      });
-      if (result.error) return json(result.status, { error: result.error });
-      return json(200, { room: result.room });
-    }
-
-    if (action === 'state') {
-      const code = body.roomCode;
-      const got = await s.get(code, { type: 'json' });
-      if (!got) return json(404, { error: 'Room not found' });
-      return json(200, { room: got });
-    }
-
-    if (action === 'raise' || action === 'pass' || action === 'skip' || action === 'claim') {
-      const code = body.roomCode;
-      const result = await readMutateWrite(s, code, (room) => {
-        if (room.phase !== 'drafting' || !room.game || !room.game.currentLot) return { status: 400, error: 'No active lot' };
-        const g = room.game;
-        const bidders = room.players.filter(p => p.role !== 'host');
-        const myIdx = bidders.findIndex(p => p.nickname === body.nickname);
-        if (myIdx < 0) return { status: 403, error: 'Not a bidder in this room' };
-
-        if (action === 'raise') {
-          if (g.mode !== 'contested' || g.turnIdx !== myIdx) return { status: 400, error: 'Not your turn' };
-          const amount = parseInt(body.amount, 10);
-          if (!(amount > g.currentBid) || amount > bidders[myIdx].budget) return { status: 400, error: 'Invalid raise' };
-          g.currentBid = amount; g.currentBidderIdx = myIdx; g.passStreak = 0;
-          g.tickerLog.push(`${bidders[myIdx].nickname}: $${amount}`);
-          g.turnIdx = 1 - g.turnIdx;
-        } else if (action === 'pass') {
-          if (g.mode !== 'contested' || g.turnIdx !== myIdx) return { status: 400, error: 'Not your turn' };
-          if (g.currentBidderIdx === null) {
-            g.passStreak = (g.passStreak||0) + 1;
-            if (g.passStreak >= 2) { unsoldLot(room); }
-            else { g.turnIdx = 1 - g.turnIdx; }
-          } else {
-            resolveLotWinner(room, g.currentBidderIdx, g.currentBid);
-          }
-        } else if (action === 'skip') {
-          if (g.mode !== 'solo' || g.soloPlayerIdx !== myIdx) return { status: 400, error: 'Not your turn' };
-          g.skipsUsed++;
-          if (g.skipsUsed >= 4) {
-            resolveLotWinner(room, myIdx, bidders[myIdx].budget === 0 ? 0 : 1);
-          } else {
-            const cat = g.currentLot.cat;
-            let cand = g.isFootball ? g.footballQueue.shift() : g.itemPool.shift();
-            if (cand) g.currentLot = g.isFootball ? { name: cand[0], r: cand[1], cat } : { name: cand.name, r: cand.r, cat: null };
-          }
-        } else if (action === 'claim') {
-          if (g.mode !== 'solo' || g.soloPlayerIdx !== myIdx) return { status: 400, error: 'Not your turn' };
-          const budget = bidders[myIdx].budget;
-          let amount = budget === 0 ? 0 : Math.max(1, Math.min(budget, parseInt(body.amount,10) || 1));
-          resolveLotWinner(room, myIdx, amount);
-        }
-      });
-      if (result.error) return json(result.status, { error: result.error });
-      return json(200, { room: result.room });
-    }
-
-    if (action === 'newRound') {
-      const code = body.roomCode;
-      const result = await readMutateWrite(s, code, (room) => {
-        const requester = room.players.find(p => p.nickname === body.nickname);
-        if (!requester || (requester.role !== 'host' && requester.role !== 'creator')) {
-          return { status: 403, error: 'Only the host can start a rematch' };
-        }
-        const themeResolved = resolveThemeItems(body.theme || {});
-        room.theme = { key: (body.theme&&body.theme.themeKey)||room.theme.key, name: themeResolved.name, emoji: themeResolved.emoji,
-                       football: themeResolved.football, items: themeResolved.items || null, custom: body.theme&&body.theme.customTheme || null };
-        room.players.forEach(p => { p.budget = 20; p.items = []; });
-        room.phase = 'drafting';
-        room.game = newGame(themeResolved);
-        drawNextLot(room);
-      });
-      if (result.error) return json(result.status, { error: result.error });
-      return json(200, { room: result.room });
-    }
-
-    return json(400, { error: 'Unknown action' });
-  } catch (err) {
-    return json(500, { error: err.message || 'Server error' });
+function judgeGame(playersItems){
+  const avg = items => items.length ? items.reduce((s,it)=>s+it.r,0)/items.length : 0;
+  const avgs = playersItems.map(avg);
+  let winner = null;
+  if(avgs[0]>avgs[1]) winner=0; else if(avgs[1]>avgs[0]) winner=1;
+  return {avgs, winner};
+}
+function subj(nick){ return nick==='You' ? 'You' : nick; }
+function buildJudgmentParagraph(nicks, itemsArr, budgets, bidLog, j){
+  const spent = budgets.map(b=>20-b);
+  const counts = itemsArr.map(items=>items.length);
+  const s = [];
+  s.push(pick(OPENER_TPL));
+  s.push(nicks[0]==='You'
+    ? `You put down $${spent[0]} of your $20 across ${counts[0]} pick${counts[0]===1?'':'s'}.`
+    : `${nicks[0]} put down $${spent[0]} of their $20 across ${counts[0]} pick${counts[0]===1?'':'s'}.`);
+  s.push(`${nicks[1]} spent $${spent[1]}, landing ${counts[1]} pick${counts[1]===1?'':'s'}.`);
+  const bigLog = bidLog.filter(b=>b.amount>=5).sort((a,b)=>b.amount-a.amount);
+  if(bigLog.length){
+    const b = bigLog[0];
+    s.push(pick(SPLURGE_TPL).replace('{p}',subj(nicks[b.player])).replace('{a}',b.amount).replace('{item}',b.name));
   }
+  const steals = bidLog.filter(b=>b.amount>0 && b.amount<=2);
+  if(steals.length){
+    const b = steals[0];
+    s.push(pick(STEAL_TPL).replace('{p}',subj(nicks[b.player])).replace('{a}',b.amount).replace('{item}',b.name));
+  }
+  const freebies = bidLog.filter(b=>b.amount===0).length;
+  if(freebies>0){
+    s.push(pick(FREEBIE_TPL).replace('{n}',freebies).replace(/{s}/g, freebies===1?'':'s'));
+  }
+  if(j.winner===null){
+    s.push(pick(TIE_TPL).replace(/{a1}/g, j.avgs[0].toFixed(1)));
+  } else {
+    s.push(pick(WIN_TPL).replace('{p}',subj(nicks[j.winner])).replace('{a1}',j.avgs[j.winner].toFixed(1)).replace('{a2}',j.avgs[1-j.winner].toFixed(1)));
+  }
+  return s.join(' ');
+}
+
+/* ============ RESULTS: PRACTICE ============ */
+function showResultsScreen(players, P, isFootball){
+  const itemsArr = players.map(p=>p.items);
+  const nicks = players.map(p=>p.nick);
+  const budgets = players.map(p=>p.budget);
+  renderResults(itemsArr, nicks, budgets, P.bidLog, isFootball, {
+    themeLabel: (P.themeEmoji||'')+' '+P.themeName,
+    onRematch: ()=>{ showScreen('screen-draft'); startPracticeGame(); }
+  });
+}
+
+/* ============ RESULTS: ONLINE ============ */
+function renderResultsFromRoom(room){
+  const bidders = room.players.filter(p=>p.role!=='host');
+  const itemsArr = bidders.map(p=>p.items);
+  const nicks = bidders.map(p=>p.nickname);
+  const budgets = bidders.map(p=>p.budget);
+  const isFootball = room.theme.key==='football';
+  const amHostOrCreator = room.players.find(p=>p.nickname===App.nickname && (p.role==='host'||p.role==='creator'));
+  renderResults(itemsArr, nicks, budgets, room.game.bidLog||[], isFootball, {
+    themeLabel: (room.theme.emoji||'🎯')+' '+room.theme.name,
+    canRematch: !!amHostOrCreator,
+    onRematch: goRematchThemePick
+  });
+}
+
+/* ============ SHARED RESULTS RENDER ============ */
+function renderResults(itemsArr, nicks, budgets, bidLog, isFootball, opts){
+  showScreen('screen-results');
+  const j = judgeGame(itemsArr);
+  $('results-title').textContent = opts.themeLabel;
+  $('results-subhead').textContent = '';
+
+  const picksWrap = $('picks-wrap'); picksWrap.innerHTML='';
+  $('pitches-wrap').innerHTML='';
+  nicks.forEach((n,i)=>{
+    picksWrap.innerHTML += playerCardHTML(n, budgets[i], itemsArr[i], {leading: j.winner===i});
+  });
+  if(isFootball){
+    const pitchWrap = document.createElement('div'); pitchWrap.className='pitch-wrap';
+    itemsArr.forEach((items,i)=>{
+      const col = document.createElement('div'); col.className='pitch-col';
+      col.innerHTML = `<div style="font-weight:700; font-size:12px; margin-bottom:4px;">${escapeHtml(nicks[i])}</div>` + renderPitchSVG(items);
+      pitchWrap.appendChild(col);
+    });
+    $('pitches-wrap').appendChild(pitchWrap);
+  }
+
+  const flavorWrap = $('flavor-wrap'); flavorWrap.innerHTML='';
+  const pillLabel = j.winner===null ? "It's a tie" : `${nicks[j.winner]} wins`;
+  const pillClass = j.winner===null ? 'pill tie' : 'pill';
+  const paragraph = buildJudgmentParagraph(nicks, itemsArr, budgets, bidLog, j);
+  const card = document.createElement('div'); card.className='judgment-card';
+  card.innerHTML = `<div class="jhead"><h2 class="serif">Judgment</h2><span class="${pillClass}">${escapeHtml(pillLabel)}</span></div>
+    <div class="judgment-text">${escapeHtml(paragraph)}</div>`;
+  flavorWrap.appendChild(card);
+
+  $('btn-rematch').classList.toggle('hidden', opts.canRematch===false);
+  $('btn-rematch').onclick = opts.onRematch;
+  $('btn-home').onclick = ()=>{ stopPolling(); App.roomCode=null; App.mode=null; showScreen('screen-home'); };
+}
+
+
+/* ============ SVG SOCCER PITCH ============ */
+function shortName(n){ const parts=n.split(' '); return parts.length>1 ? parts[parts.length-1] : n; }
+function renderPitchSVG(items){
+  const byCat = {GK:[],DEF:[],MID:[],ATT:[]};
+  items.forEach(it=>{ if(byCat[it.cat]) byCat[it.cat].push(it); });
+  const W=200,H=280;
+  let svg = `<svg class="pitch" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">
+    <rect x="0" y="0" width="${W}" height="${H}" fill="#4c7a5a"/>
+    <rect x="4" y="4" width="${W-8}" height="${H-8}" fill="none" stroke="#fff" stroke-width="2"/>
+    <line x1="4" y1="${H/2}" x2="${W-4}" y2="${H/2}" stroke="#fff" stroke-width="2"/>
+    <circle cx="${W/2}" cy="${H/2}" r="24" fill="none" stroke="#fff" stroke-width="2"/>
+    <rect x="${W/2-40}" y="4" width="80" height="34" fill="none" stroke="#fff" stroke-width="2"/>
+    <rect x="${W/2-40}" y="${H-38}" width="80" height="34" fill="none" stroke="#fff" stroke-width="2"/>
+  `;
+  function dot(x,y,label,tier){
+    const fill = tier>=8 ? '#c99a3f' : '#F5EFE3';
+    svg += `<circle cx="${x}" cy="${y}" r="13" fill="${fill}" stroke="#2B2620" stroke-width="1.5"/>
+      <text x="${x}" y="${y+3}" font-size="8" text-anchor="middle" font-family="Helvetica,Arial,sans-serif" fill="#2B2620">${escapeHtml(shortName(label).slice(0,10))}</text>`;
+  }
+  (byCat.ATT[0]) && dot(W/2, 30, byCat.ATT[0].name, byCat.ATT[0].r);
+  if(byCat.MID[0]) dot(W/2-38, 110, byCat.MID[0].name, byCat.MID[0].r);
+  if(byCat.MID[1]) dot(W/2+38, 110, byCat.MID[1].name, byCat.MID[1].r);
+  if(byCat.DEF[0]) dot(W/2, 175, byCat.DEF[0].name, byCat.DEF[0].r);
+  if(byCat.GK[0]) dot(W/2, 235, byCat.GK[0].name, byCat.GK[0].r);
+  svg += `</svg>`;
+  return svg;
+}
+
+/* ============ SAVE AS IMAGE ============ */
+$('btn-save-image').onclick = async ()=>{
+  try{
+    const canvas = await html2canvas($('results-card'), {backgroundColor:'#F5EFE3', scale:2});
+    canvas.toBlob(async (blob)=>{
+      const file = new File([blob], 'build-your-best.png', {type:'image/png'});
+      if(navigator.share && navigator.canShare && navigator.canShare({files:[file]})){
+        try{ await navigator.share({files:[file], title:'Build Your Best ___'}); return; }catch(e){}
+      }
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href=url; a.download='build-your-best.png';
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(()=>URL.revokeObjectURL(url), 4000);
+    });
+  }catch(e){ alert('Could not generate image on this device.'); }
 };
+
+/* ============ REMATCH FLOW (online) ============ */
+function goRematchThemePick(){
+  App.inRematch = true;
+  stopPolling();
+  showScreen('screen-home');
+  updateHomeForRematch();
+}
+function updateHomeForRematch(){
+  const inR = !!App.inRematch;
+  $('rematch-bar').classList.toggle('hidden', !inR);
+  $('mode-select-card').classList.toggle('hidden', inR);
+  $('mode-select-label').classList.toggle('hidden', inR);
+}
+$('btn-cancel-rematch').onclick = ()=>{ App.inRematch=false; App.roomCode=null; updateHomeForRematch(); };
+$('btn-start-rematch').onclick = async ()=>{
+  if(!App.themeKey){ alert('Pick a theme first!'); return; }
+  try{
+    const data = await api('newRound', {theme: themePayload()});
+    App.inRematch = false;
+    renderRoomState(data.room);
+    startPolling();
+  }catch(e){ alert('Could not start rematch: '+e.message); }
+};
+
+/* ============ INIT ============ */
+$('btn-use-custom').onclick = useCustomTheme;
+renderThemeGrid();
+updateHomeForRematch();
+
+/* Debug panel wiring — 5 taps on the footer text opens it */
+(function(){
+  let taps = 0, tapTimer = null;
+  $('footer-debug-trigger').addEventListener('click', ()=>{
+    taps++;
+    clearTimeout(tapTimer);
+    tapTimer = setTimeout(()=>{ taps = 0; }, 1500);
+    if(taps>=5){ taps = 0; debugLog('— debug panel opened —'); $('debug-panel').classList.remove('hidden'); }
+  });
+  $('btn-debug-close').onclick = ()=> $('debug-panel').classList.add('hidden');
+  $('btn-debug-clear').onclick = ()=>{ window.__debugLog = []; debugLog('— log cleared —'); };
+  $('btn-debug-copy').onclick = async ()=>{
+    const text = window.__debugLog.map(e=>`[${e.ts}] ${e.msg}`).join('\n') || 'No errors caught yet.';
+    try{ await navigator.clipboard.writeText(text); $('btn-debug-copy').textContent = 'Copied!'; }
+    catch(e){ $('btn-debug-copy').textContent = 'Copy failed'; }
+    setTimeout(()=>{ $('btn-debug-copy').textContent = 'Copy'; }, 1400);
+  };
+})();
+
+</script>
+</body>
+</html>

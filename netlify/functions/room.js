@@ -164,7 +164,10 @@ async function readMutateWrite(s, code, mutateFn, opts){
     }
     const room = got.data;
     const fail = mutateFn(room);
-    if (fail) return fail; // logical error — don't retry, it won't resolve itself
+    if (fail) {
+      if (fail.noop) return { room }; // already applied (e.g. rejoin) — no write needed, just hand back current state
+      return fail; // logical error — don't retry, it won't resolve itself
+    }
     const ok = await s.setJSON(code, room, { onlyIfMatch: got.etag });
     if (ok) return { room };
     await sleep(200 * (attempt + 1));
@@ -203,7 +206,12 @@ exports.handler = async (event) => {
       const result = await readMutateWrite(s, code, (room) => {
         const needed = room.hostMode === '3p' ? 3 : 2;
         if (room.players.some(p => p.nickname === body.nickname)) {
-          return { status: 400, error: `Nickname "${body.nickname}" is already in this room. Current players (${room.players.length}/${needed}): ${room.players.map(p=>`${p.nickname}[${p.role}]`).join(', ')}. Room phase: ${room.phase}.` };
+          // Same nickname trying to join again almost always means: their first
+          // attempt actually succeeded server-side, but the response never made
+          // it back to their device (dropped connection, slow network). Treat
+          // this as "welcome back" rather than an error — otherwise they're
+          // stuck holding a seat they can't see.
+          return { noop: true };
         }
         if (room.players.length >= needed) {
           return { status: 400, error: `Room is full (${room.players.length}/${needed}). Players already in: ${room.players.map(p=>`${p.nickname}[${p.role}]`).join(', ')}. Room phase: ${room.phase}, created for hostMode "${room.hostMode}".` };

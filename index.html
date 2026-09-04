@@ -71,6 +71,35 @@
   .badge{ display:inline-block; background:var(--cream-dark); color:var(--ink-soft); font-size:11px; padding:3px 8px; border-radius:20px; margin-left:6px; }
   .room-code{ font-family:'SF Mono',monospace; font-size:26px; letter-spacing:6px; text-align:center; padding:14px; background:var(--cream-dark); border-radius:8px; margin:10px 0; }
 
+  /* Item-won toast — shown for every lot resolution, styled by price tier */
+  .free-toast{
+    position:fixed; top:32%; left:50%; transform:translate(-50%,-50%) scale(0.85);
+    padding:16px 24px; border-radius:16px;
+    font-family:Georgia,serif; font-weight:700; font-size:19px; text-align:center;
+    box-shadow:0 10px 34px rgba(0,0,0,.24); z-index:1000; opacity:0; pointer-events:none;
+    max-width:86vw;
+  }
+  .free-toast .sub{ display:block; font-family:'Helvetica Neue',sans-serif; font-size:13px; font-weight:600; margin-top:5px; }
+  .free-toast.variant-free{ background:var(--gold); color:var(--ink); font-size:22px; }
+  .free-toast.variant-steal{ background:var(--rust); color:#fff; }
+  .free-toast.variant-sold{ background:#fffdf8; color:var(--ink); border:2px solid var(--ink); }
+  .free-toast.show.variant-free,
+  .free-toast.show.variant-steal{ animation: bigPop 1.7s ease forwards; }
+  .free-toast.show.variant-sold{ animation: softPop 1.25s ease forwards; }
+  @keyframes bigPop{
+    0%{ opacity:0; transform:translate(-50%,-50%) scale(0.4) rotate(-6deg); }
+    14%{ opacity:1; transform:translate(-50%,-50%) scale(1.1) rotate(2deg); }
+    24%{ transform:translate(-50%,-50%) scale(1) rotate(0deg); }
+    82%{ opacity:1; transform:translate(-50%,-50%) scale(1) rotate(0deg); }
+    100%{ opacity:0; transform:translate(-50%,-50%) scale(0.92) rotate(0deg); }
+  }
+  @keyframes softPop{
+    0%{ opacity:0; transform:translate(-50%,-50%) scale(0.85); }
+    18%{ opacity:1; transform:translate(-50%,-50%) scale(1); }
+    78%{ opacity:1; transform:translate(-50%,-50%) scale(1); }
+    100%{ opacity:0; transform:translate(-50%,-50%) scale(0.96); }
+  }
+
   /* Draft screen */
   .stall-row{ margin-bottom:6px; }
 
@@ -199,6 +228,7 @@
     <div class="card center">
       <div id="lobby-role-note" style="font-size:13px; color:var(--ink-soft); margin-bottom:6px;"></div>
       <div class="room-code" id="lobby-code">-----</div>
+      <button class="btn btn-secondary" id="btn-copy-code" style="margin-top:0;">📋 Copy code</button>
       <p style="font-size:13px; color:var(--ink-soft);">Share this code with the other player<span id="lobby-plural"></span>.</p>
       <div id="lobby-players" style="margin:14px 0;"></div>
       <div class="waiting-note" id="lobby-waiting">Waiting for players to join…</div>
@@ -545,13 +575,25 @@ $('btn-nickname-continue').onclick = async ()=>{
 
 /* ============ NETWORKING ============ */
 async function api(action, payload){
-  const res = await fetch('/.netlify/functions/room', {
-    method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify(Object.assign({action, roomCode: App.roomCode}, payload||{}))
-  });
-  const data = await res.json().catch(()=>({error:'Bad response'}));
-  if(!res.ok){ throw new Error(data.error || 'Request failed'); }
-  return data;
+  let res;
+  try{
+    res = await fetch('/.netlify/functions/room', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(Object.assign({action, roomCode: App.roomCode}, payload||{}))
+    });
+  }catch(e){
+    throw new Error('Network error — check your connection ('+(e.message||'fetch failed')+')');
+  }
+  const raw = await res.text();
+  let data;
+  try{ data = raw ? JSON.parse(raw) : {}; }
+  catch(e){ data = null; }
+  if(!res.ok){
+    const msg = (data && (data.error || data.errorMessage || data.message))
+      || `Server error (HTTP ${res.status})${raw ? ': '+raw.slice(0,140) : ''}`;
+    throw new Error(msg);
+  }
+  return data || {};
 }
 function themePayload(){
   if(App.themeKey==='football') return {themeKey:'football'};
@@ -594,6 +636,7 @@ function enterLobby(room){
   $('lobby-role-note').textContent = App.role==='host' ? "You're hosting — you'll watch, not bid."
     : App.role==='creator' ? "Waiting for someone to join…" : "You're in!";
   renderLobbyPlayers(room);
+  App.onlineBidLogSeen = 0;
 }
 function renderLobbyPlayers(room){
   const wrap = $('lobby-players');
@@ -602,6 +645,17 @@ function renderLobbyPlayers(room){
   $('lobby-waiting').textContent = room.players.length < needed ? `Waiting for players to join… (${room.players.length}/${needed})` : 'Everyone is in — starting…';
 }
 $('btn-lobby-leave').onclick = ()=>{ stopPolling(); App.roomCode=null; showScreen('screen-home'); };
+$('btn-copy-code').onclick = async ()=>{
+  const code = App.roomCode || $('lobby-code').textContent;
+  const btn = $('btn-copy-code'); const orig = btn.textContent;
+  try{
+    await navigator.clipboard.writeText(code);
+    btn.textContent = '✓ Copied!';
+  }catch(e){
+    btn.textContent = 'Long-press the code to copy';
+  }
+  setTimeout(()=>{ btn.textContent = orig; }, 1600);
+};
 
 /* ============ ROOM STATE RENDER DISPATCH ============ */
 function renderRoomState(room){
@@ -752,15 +806,36 @@ function startSoloLot(P, playerIdx){
 function resolveLotWinner(P, winnerIdx, amount){
   const player = P.players[winnerIdx];
   player.budget -= amount;
-  const rec = {name:P.currentLot.name, r:P.currentLot.r, cat:P.currentLot.cat, paid:amount};
+  const lotName = P.currentLot.name;
+  const rec = {name:lotName, r:P.currentLot.r, cat:P.currentLot.cat, paid:amount};
   player.items.push(rec);
-  P.bidLog.push({player:winnerIdx, name:P.currentLot.name, amount, cat:P.currentLot.cat});
+  P.bidLog.push({player:winnerIdx, name:lotName, amount, cat:P.currentLot.cat});
   recordHumanBidToServer(winnerIdx, P);
   sndGavel();
-  if(amount<=2){ setTimeout(()=>{ sndCoin(); confettiBurst(); }, 260); }
+  setTimeout(()=>showItemWonToast(player.nick, lotName, amount), 260);
+  let delay;
+  if(amount<=2){
+    setTimeout(()=>{ sndCoin(); confettiBurst(); }, 260);
+    delay = 1700;
+  } else {
+    delay = 1300;
+  }
   P.openerIndex = 1-P.openerIndex;
   P.mode='idle'; P.currentLot=null;
-  setTimeout(()=>drawNextLotPractice(), amount<=2?900:500);
+  setTimeout(()=>drawNextLotPractice(), delay);
+}
+function showItemWonToast(nick, itemName, amount){
+  const el = document.createElement('div');
+  let variant, headline, priceLine;
+  if(amount===0){ variant='variant-free'; headline='🎉 FREE!'; priceLine='for nothing'; }
+  else if(amount<=2){ variant='variant-steal'; headline='💰 Steal!'; priceLine=`for just $${amount}`; }
+  else { variant='variant-sold'; headline='✓ Sold!'; priceLine=`for $${amount}`; }
+  el.className = 'free-toast ' + variant;
+  el.innerHTML = `${headline}<span class="sub">${escapeHtml(nick)} got ${escapeHtml(itemName)} ${priceLine}</span>`;
+  document.body.appendChild(el);
+  requestAnimationFrame(()=>el.classList.add('show'));
+  const life = variant==='variant-sold' ? 1300 : 1750;
+  setTimeout(()=>el.remove(), life);
 }
 function recordHumanBidToServer(winnerIdx, P){
   if(winnerIdx!==0) return; // only record human (You) raises
@@ -1005,6 +1080,21 @@ function renderOnlineDraft(room){
   const g = room.game;
   if(!g){ return; }
   const bidders = room.players.filter(p=>p.role!=='host');
+
+  if(g.bidLog){
+    if(App.onlineBidLogSeen===undefined || g.bidLog.length<App.onlineBidLogSeen) App.onlineBidLogSeen = 0;
+    if(g.bidLog.length>App.onlineBidLogSeen){
+      for(let i=App.onlineBidLogSeen;i<g.bidLog.length;i++){
+        const entry = g.bidLog[i];
+        if(!bidders[entry.player]) continue;
+        showItemWonToast(bidders[entry.player].nickname, entry.name, entry.amount);
+        sndGavel();
+        if(entry.amount<=2) setTimeout(()=>{ sndCoin(); confettiBurst(); }, 260);
+      }
+      App.onlineBidLogSeen = g.bidLog.length;
+    }
+  }
+
   renderStalls(bidders.map(p=>({nick:p.nickname, budget:p.budget, items:p.items})),
     g.currentBidderIdx, g.mode==='contested'?g.turnIdx:null);
 

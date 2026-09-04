@@ -1232,6 +1232,13 @@ function renderOnlineDraft(room){
   }
 }
 async function onlineAction(type, payload){
+  // Guards against a mobile "ghost click" — a single tap occasionally fires
+  // two click events, and the second one arrives after the turn has already
+  // moved on, so it gets correctly rejected even though the first succeeded.
+  // That looked like "it says not your turn but it still works" — both were
+  // true, just from two separate requests off one tap.
+  if(App.onlineActionInFlight) return;
+  App.onlineActionInFlight = true;
   sndClick();
   try{
     await api(type, Object.assign({nickname: App.nickname}, payload||{}));
@@ -1245,6 +1252,8 @@ async function onlineAction(type, payload){
       alert(`Action failed: ${e.message}`);
     }
     pollRoom();
+  } finally {
+    App.onlineActionInFlight = false;
   }
 }
 

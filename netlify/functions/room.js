@@ -202,8 +202,12 @@ exports.handler = async (event) => {
       if (!code) return json(400, { error: 'Missing room code' });
       const result = await readMutateWrite(s, code, (room) => {
         const needed = room.hostMode === '3p' ? 3 : 2;
-        if (room.players.some(p => p.nickname === body.nickname)) return { status: 400, error: 'Nickname already taken in this room' };
-        if (room.players.length >= needed) return { status: 400, error: 'Room is full' };
+        if (room.players.some(p => p.nickname === body.nickname)) {
+          return { status: 400, error: `Nickname "${body.nickname}" is already in this room. Current players (${room.players.length}/${needed}): ${room.players.map(p=>`${p.nickname}[${p.role}]`).join(', ')}. Room phase: ${room.phase}.` };
+        }
+        if (room.players.length >= needed) {
+          return { status: 400, error: `Room is full (${room.players.length}/${needed}). Players already in: ${room.players.map(p=>`${p.nickname}[${p.role}]`).join(', ')}. Room phase: ${room.phase}, created for hostMode "${room.hostMode}".` };
+        }
         room.players.push({ nickname: body.nickname, role: 'bidder', budget: 20, items: [] });
         if (room.players.length === needed) {
           room.phase = 'drafting';

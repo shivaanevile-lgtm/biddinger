@@ -83,6 +83,8 @@
   .free-toast.variant-free{ background:var(--gold); color:var(--ink); font-size:22px; }
   .free-toast.variant-steal{ background:var(--rust); color:#fff; }
   .free-toast.variant-sold{ background:#fffdf8; color:var(--ink); border:2px solid var(--ink); }
+  .free-toast.variant-joined{ background:var(--green); color:#fff; font-size:19px; }
+  .free-toast.show.variant-joined{ animation: softPop 1.5s ease forwards; }
   .free-toast.show.variant-free,
   .free-toast.show.variant-steal{ animation: bigPop 1.7s ease forwards; }
   .free-toast.show.variant-sold{ animation: softPop 1.25s ease forwards; }
@@ -238,7 +240,6 @@
 
   <!-- DRAFT SCREEN -->
   <div class="screen" id="screen-draft">
-    <div class="stall-row" id="stall-row"></div>
     <div class="status-line" id="status-line"></div>
     <div id="host-watch-note" class="waiting-note hidden">You're hosting — sit back and watch the bidding.</div>
 
@@ -261,6 +262,9 @@
       </div>
       <div id="waiting-turn" class="waiting-note hidden">Waiting for the other player…</div>
     </div>
+
+    <div class="section-label">players</div>
+    <div class="stall-row" id="stall-row"></div>
   </div>
 
   <!-- RESULTS SCREEN -->
@@ -452,8 +456,10 @@ function confettiBurst(){
 
 /* ============ SCREEN NAV ============ */
 function showScreen(id){
+  const target = $(id);
+  if(target.classList.contains('active')) return; // already showing — don't yank scroll position
   document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
-  $(id).classList.add('active');
+  target.classList.add('active');
   window.scrollTo(0,0);
 }
 
@@ -559,17 +565,24 @@ $('btn-nickname-back').onclick = ()=> showScreen('screen-home');
 $('btn-nickname-continue').onclick = async ()=>{
   const nick = $('nickname-input').value.trim().slice(0,16);
   if(!nick){ alert('Please enter a nickname.'); return; }
+  const btn = $('btn-nickname-continue');
+  if(btn.disabled) return; // guard against double-tap / slow-network double-submit
+  btn.disabled = true; const origLabel = btn.textContent; btn.textContent = 'Joining…';
   App.nickname = nick;
   App.mode='online';
-  if(App._nickPurpose==='join'){
-    const code = $('join-code-input').value.trim().toUpperCase();
-    if(code.length!==5){ alert('Room code should be 5 characters.'); return; }
-    App.roomCode = code; App.role='joiner';
-    await joinRoom();
-  } else {
-    if(!App.hostMode){ alert('Pick 2-Player or 3-Player.'); return; }
-    App.role = App.hostMode==='3p' ? 'host' : 'creator';
-    await createRoom();
+  try{
+    if(App._nickPurpose==='join'){
+      const code = $('join-code-input').value.trim().toUpperCase();
+      if(code.length!==5){ alert('Room code should be 5 characters.'); return; }
+      App.roomCode = code; App.role='joiner';
+      await joinRoom();
+    } else {
+      if(!App.hostMode){ alert('Pick 2-Player or 3-Player.'); return; }
+      App.role = App.hostMode==='3p' ? 'host' : 'creator';
+      await createRoom();
+    }
+  } finally {
+    btn.disabled = false; btn.textContent = origLabel;
   }
 };
 
@@ -635,14 +648,30 @@ function enterLobby(room){
   $('lobby-plural').textContent = room.hostMode==='3p' ? 's' : '';
   $('lobby-role-note').textContent = App.role==='host' ? "You're hosting — you'll watch, not bid."
     : App.role==='creator' ? "Waiting for someone to join…" : "You're in!";
-  renderLobbyPlayers(room);
   App.onlineBidLogSeen = 0;
+  App.lobbySeenNicks = null; // reset join-toast tracking for a fresh lobby
+  renderLobbyPlayers(room);
 }
 function renderLobbyPlayers(room){
   const wrap = $('lobby-players');
+  const curNicks = room.players.map(p=>p.nickname);
+  if(App.lobbySeenNicks){
+    curNicks.forEach(n=>{
+      if(!App.lobbySeenNicks.includes(n) && n!==App.nickname) showJoinedToast(n);
+    });
+  }
+  App.lobbySeenNicks = curNicks;
   wrap.innerHTML = room.players.map(p=>`<div style="padding:6px;">👤 <b>${escapeHtml(p.nickname)}</b> ${p.role==='host'?'<span class="badge">host</span>':''}</div>`).join('');
   const needed = room.hostMode==='3p' ? 3 : 2;
   $('lobby-waiting').textContent = room.players.length < needed ? `Waiting for players to join… (${room.players.length}/${needed})` : 'Everyone is in — starting…';
+}
+function showJoinedToast(nick){
+  const el = document.createElement('div');
+  el.className = 'free-toast variant-joined';
+  el.innerHTML = `👋<span class="sub">${escapeHtml(nick)} joined the room</span>`;
+  document.body.appendChild(el);
+  requestAnimationFrame(()=>el.classList.add('show'));
+  setTimeout(()=>el.remove(), 1500);
 }
 $('btn-lobby-leave').onclick = ()=>{ stopPolling(); App.roomCode=null; showScreen('screen-home'); };
 $('btn-copy-code').onclick = async ()=>{

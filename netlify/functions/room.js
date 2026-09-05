@@ -43,16 +43,23 @@ function resolveThemeItems(theme){
   return { categoryTheme: null, name:t.name, emoji:t.emoji, items:t.items };
 }
 
-function buildCategoryQueue(catThemeKey, cat){
+function buildCategoryQueue(catThemeKey, cat, exclude){
   const ct = CATEGORY_THEMES[catThemeKey];
-  const poolShuffled = shuffle(ct.pool[cat].slice());
+  const skip = exclude || new Set();
+  const keep = arr => arr.filter(it => !skip.has(it[0]));
+  const poolShuffled = shuffle(keep(ct.pool[cat]));
   if (!ct.icons) return poolShuffled;
-  const iconsAll = shuffle(ct.icons[cat].slice());
+  const iconsAll = shuffle(keep(ct.icons[cat]));
   const icons3 = iconsAll.slice(0,3);
-  const lead = icons3[0];
   const restIcons = icons3.slice(1);
   const rest = shuffle(restIcons.concat(poolShuffled));
-  return [lead].concat(rest);
+  return icons3.length ? [icons3[0]].concat(rest) : rest;
+}
+// Names already on someone's team — a refilled queue must never re-offer them.
+function draftedNames(room){
+  const out = new Set();
+  room.players.forEach(p => (p.items||[]).forEach(it => out.add(it.name)));
+  return out;
 }
 
 function newGame(themeResolved){
@@ -95,13 +102,14 @@ function drawNextLot(room){
       g.catIdx++;
       if (g.catIdx >= ct.cats.length) { room.phase = 'results'; g.currentLot=null; return; }
       cat = ct.cats[g.catIdx];
-      g.catQueue = buildCategoryQueue(g.catThemeKey, cat);
+      g.catQueue = buildCategoryQueue(g.catThemeKey, cat, draftedNames(room));
       g.skipsUsed = 0;
     }
     const wanting = bidders.map((p,i)=>i).filter(i => playerNeedsCat(bidders[i], cat, ct.required));
     if (!wanting.length) { room.phase='results'; g.currentLot=null; return; }
     let cand = g.catQueue.shift();
-    if (!cand) { g.catQueue = buildCategoryQueue(g.catThemeKey, cat); cand = g.catQueue.shift(); }
+    if (!cand) { g.catQueue = buildCategoryQueue(g.catThemeKey, cat, draftedNames(room)); cand = g.catQueue.shift(); }
+    if (!cand) { room.phase='results'; g.currentLot=null; return; } // category genuinely exhausted
     g.currentLot = { name: cand[0], r: cand[1], cat };
     startLotMode(g, wanting);
   } else {
@@ -288,8 +296,20 @@ exports.handler = async (event) => {
             resolveLotWinner(room, myIdx, bidders[myIdx].budget === 0 ? 0 : 1);
           } else {
             const cat = g.currentLot.cat;
-            let cand = g.catThemeKey ? g.catQueue.shift() : g.itemPool.shift();
-            if (cand) g.currentLot = g.catThemeKey ? { name: cand[0], r: cand[1], cat } : { name: cand.name, r: cand.r, cat: null };
+            const passedOver = g.currentLot;
+            if (g.catThemeKey) {
+              const cand = g.catQueue.shift();
+              if (cand) {
+                g.catQueue.push([passedOver.name, passedOver.r]); // recycle to the back
+                g.currentLot = { name: cand[0], r: cand[1], cat };
+              }
+            } else {
+              const cand = g.itemPool.shift();
+              if (cand) {
+                g.itemPool.push({ name: passedOver.name, r: passedOver.r }); // recycle to the back
+                g.currentLot = { name: cand.name, r: cand.r, cat: null };
+              }
+            }
           }
         } else if (action === 'claim') {
           if (g.mode !== 'solo' || g.soloPlayerIdx !== myIdx) return { status: 400, error: 'Not your turn', retryable: true };

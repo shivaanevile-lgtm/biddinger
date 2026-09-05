@@ -1,8 +1,8 @@
 {
-  "name": "build-your-best",
+  "name": "dr4fter",
   "version": "1.0.0",
   "private": true,
-  "description": "Build Your Best ___ - a live ascending-auction party game",
+  "description": "Dr4fter - a live ascending-auction party game",
   "dependencies": {
     "@netlify/blobs": "^8.1.0"
   }

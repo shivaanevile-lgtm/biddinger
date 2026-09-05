@@ -29,7 +29,6 @@ function shuffle(arr){
   for (let i=a.length-1;i>0;i--){ const j = Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; }
   return a;
 }
-function pick(arr){ return arr[Math.floor(Math.random()*arr.length)]; }
 
 function resolveThemeItems(theme){
   if (CATEGORY_THEMES[theme.themeKey]) {
@@ -269,7 +268,15 @@ exports.handler = async (event) => {
           if (g.mode !== 'contested' || g.turnIdx !== myIdx) return { status: 400, error: 'Not your turn', retryable: true };
           if (g.currentBidderIdx === null) {
             g.passStreak = (g.passStreak||0) + 1;
-            if (g.passStreak >= 2) { unsoldLot(room); }
+            if (g.passStreak >= 2) {
+              // Both declined with no bid. If neither can actually afford the
+              // $1 minimum, passing is forced, not a choice — leaving the lot
+              // unsold would repeat every round until the pool emptied and
+              // players finished under the 5-item cap. Award it free instead.
+              const allBroke = bidders.every(p => p.budget < 1);
+              if (allBroke) resolveLotWinner(room, myIdx, 0);
+              else unsoldLot(room);
+            }
             else { g.turnIdx = 1 - g.turnIdx; }
           } else {
             resolveLotWinner(room, g.currentBidderIdx, g.currentBid);

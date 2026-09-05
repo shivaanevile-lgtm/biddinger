@@ -157,11 +157,14 @@ const MOVIE_REQUIRED = {GENRE:1,DIRECTOR:1,ACTOR:2,SETTING:1};
 // icons:null means no rare/legendary sub-pool for that theme (football only, for now).
 const CATEGORY_THEMES = {
  football:{name:'5-a-Side Draft', emoji:'⚽', cats:FOOTBALL_CATS, required:FOOTBALL_REQUIRED, pool:FOOTBALL.pool, icons:FOOTBALL.icons,
-   catLabel:{GK:'⚽ Goalkeeper',DEF:'⚽ Defender',MID:'⚽ Midfielder',ATT:'⚽ Attacker'}, resultView:'pitch'},
+   catLabel:{GK:'⚽ Goalkeeper',DEF:'⚽ Defender',MID:'⚽ Midfielder',ATT:'⚽ Attacker'},
+   catShort:{GK:'GK',DEF:'DEF',MID:'MID',ATT:'ATT'}, resultView:'pitch'},
  sandwich:{name:'Build A Sandwich', emoji:'🥪', cats:SANDWICH_CATS, required:SANDWICH_REQUIRED, pool:SANDWICH.pool, icons:null,
-   catLabel:{BREAD:'🍞 Bread',MEAT:'🥩 Meat',CHEESE:'🧀 Cheese',CONDIMENT:'🫙 Condiment',TOPPING:'🥬 Topping'}, resultView:'list'},
+   catLabel:{BREAD:'🍞 Bread',MEAT:'🥩 Meat',CHEESE:'🧀 Cheese',CONDIMENT:'🫙 Condiment',TOPPING:'🥬 Topping'},
+   catShort:{BREAD:'Bread',MEAT:'Meat',CHEESE:'Cheese',CONDIMENT:'Condiment',TOPPING:'Topping'}, resultView:'list'},
  movie:{name:'Build Your Perfect Movie', emoji:'🎬', cats:MOVIE_CATS, required:MOVIE_REQUIRED, pool:MOVIE.pool, icons:null,
-   catLabel:{GENRE:'🎭 Genre',DIRECTOR:'🎥 Director',ACTOR:'⭐ Actor',SETTING:'🌍 Setting'}, resultView:'list'}
+   catLabel:{GENRE:'🎭 Genre',DIRECTOR:'🎥 Director',ACTOR:'⭐ Actor',SETTING:'🌍 Setting'},
+   catShort:{GENRE:'Genre',DIRECTOR:'Director',ACTOR:'Actor',SETTING:'Setting'}, resultView:'list'}
 };
 
 module.exports = { THEMES, FOOTBALL, FOOTBALL_CATS, FOOTBALL_REQUIRED, SANDWICH, SANDWICH_CATS, SANDWICH_REQUIRED, MOVIE, MOVIE_CATS, MOVIE_REQUIRED, CATEGORY_THEMES };

@@ -156,6 +156,7 @@ function sleep(ms){ return new Promise(r => setTimeout(r, ms)); }
 async function readMutateWrite(s, code, mutateFn, opts){
   opts = opts || {};
   const maxAttempts = opts.maxAttempts || 4;
+  let lastRetryableFail = null;
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     let got = await s.getWithMetadata(code, { type: 'json' });
     if (!got || !got.data) {
@@ -166,13 +167,22 @@ async function readMutateWrite(s, code, mutateFn, opts){
     const fail = mutateFn(room);
     if (fail) {
       if (fail.noop) return { room }; // already applied (e.g. rejoin) — no write needed, just hand back current state
+      if (fail.retryable && attempt < maxAttempts - 1) {
+        // This read might just be a moment stale (eventual consistency) rather
+        // than a genuine rejection — e.g. "not your turn" when it actually IS
+        // your turn, just not on the copy this read happened to land on.
+        // Re-read fresh and check again before reporting it as real.
+        lastRetryableFail = fail;
+        await sleep(150 * (attempt + 1));
+        continue;
+      }
       return fail; // logical error — don't retry, it won't resolve itself
     }
     const ok = await s.setJSON(code, room, { onlyIfMatch: got.etag });
     if (ok) return { room };
     await sleep(200 * (attempt + 1));
   }
-  return { status: 409, error: 'Room changed, please retry' };
+  return lastRetryableFail || { status: 409, error: 'Room changed, please retry' };
 }
 
 exports.handler = async (event) => {
@@ -244,14 +254,14 @@ exports.handler = async (event) => {
         if (myIdx < 0) return { status: 403, error: 'Not a bidder in this room' };
 
         if (action === 'raise') {
-          if (g.mode !== 'contested' || g.turnIdx !== myIdx) return { status: 400, error: 'Not your turn' };
+          if (g.mode !== 'contested' || g.turnIdx !== myIdx) return { status: 400, error: 'Not your turn', retryable: true };
           const amount = parseInt(body.amount, 10);
           if (!(amount > g.currentBid) || amount > bidders[myIdx].budget) return { status: 400, error: 'Invalid raise' };
           g.currentBid = amount; g.currentBidderIdx = myIdx; g.passStreak = 0;
           g.tickerLog.push(`${bidders[myIdx].nickname}: $${amount}`);
           g.turnIdx = 1 - g.turnIdx;
         } else if (action === 'pass') {
-          if (g.mode !== 'contested' || g.turnIdx !== myIdx) return { status: 400, error: 'Not your turn' };
+          if (g.mode !== 'contested' || g.turnIdx !== myIdx) return { status: 400, error: 'Not your turn', retryable: true };
           if (g.currentBidderIdx === null) {
             g.passStreak = (g.passStreak||0) + 1;
             if (g.passStreak >= 2) { unsoldLot(room); }
@@ -260,7 +270,7 @@ exports.handler = async (event) => {
             resolveLotWinner(room, g.currentBidderIdx, g.currentBid);
           }
         } else if (action === 'skip') {
-          if (g.mode !== 'solo' || g.soloPlayerIdx !== myIdx) return { status: 400, error: 'Not your turn' };
+          if (g.mode !== 'solo' || g.soloPlayerIdx !== myIdx) return { status: 400, error: 'Not your turn', retryable: true };
           g.skipsUsed++;
           if (g.skipsUsed >= 4) {
             resolveLotWinner(room, myIdx, bidders[myIdx].budget === 0 ? 0 : 1);
@@ -270,7 +280,7 @@ exports.handler = async (event) => {
             if (cand) g.currentLot = g.isFootball ? { name: cand[0], r: cand[1], cat } : { name: cand.name, r: cand.r, cat: null };
           }
         } else if (action === 'claim') {
-          if (g.mode !== 'solo' || g.soloPlayerIdx !== myIdx) return { status: 400, error: 'Not your turn' };
+          if (g.mode !== 'solo' || g.soloPlayerIdx !== myIdx) return { status: 400, error: 'Not your turn', retryable: true };
           const budget = bidders[myIdx].budget;
           let amount = budget === 0 ? 0 : Math.max(1, Math.min(budget, parseInt(body.amount,10) || 1));
           resolveLotWinner(room, myIdx, amount);

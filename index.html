@@ -835,16 +835,23 @@ function startPracticeGame(){
   drawNextLotPractice();
 }
 
-function buildCategoryCandidateQueue(catThemeKey, cat){
+function buildCategoryCandidateQueue(catThemeKey, cat, exclude){
   const ct = CATEGORY_THEMES[catThemeKey];
-  const poolShuffled = shuffle(ct.pool[cat].slice());
+  const skip = exclude || new Set();
+  const keep = arr => arr.filter(it => !skip.has(it[0]));
+  const poolShuffled = shuffle(keep(ct.pool[cat]));
   if(!ct.icons){ return poolShuffled; }
-  const iconsAll = shuffle(ct.icons[cat].slice());
+  const iconsAll = shuffle(keep(ct.icons[cat]));
   const icons3 = iconsAll.slice(0,3);
-  const leadIcon = icons3[0];
   const restIcons = icons3.slice(1);
   const rest = shuffle(restIcons.concat(poolShuffled));
-  return [leadIcon].concat(rest);
+  return icons3.length ? [icons3[0]].concat(rest) : rest;
+}
+// Names already on a player's team — a refilled queue must never re-offer them.
+function draftedNamesPractice(P){
+  const out = new Set();
+  P.players.forEach(p => p.items.forEach(it => out.add(it.name)));
+  return out;
 }
 
 function playerNeedsFlat(p){ return p.items.length < 5; }
@@ -862,13 +869,14 @@ function drawNextLotPractice(){
       P.catIdx++;
       if(P.catIdx>=ct.cats.length){ return finishPractice(); }
       cat = ct.cats[P.catIdx];
-      P.candidates = buildCategoryCandidateQueue(P.catThemeKey, cat);
+      P.candidates = buildCategoryCandidateQueue(P.catThemeKey, cat, draftedNamesPractice(P));
       P.skipsUsed = 0;
     }
     const wanting = [0,1].filter(i=>playerNeedsCat(P.players[i],cat,ct.required));
     const cand = drawCategoryCandidate(P, cat);
-    if(!cand){ // ran out of candidates edge case; refill
-      P.candidates = buildCategoryCandidateQueue(P.catThemeKey, cat);
+    if(!cand){ // queue drained — refill without anything already drafted
+      P.candidates = buildCategoryCandidateQueue(P.catThemeKey, cat, draftedNamesPractice(P));
+      if(!P.candidates.length) return finishPractice(); // category genuinely exhausted
       return drawNextLotPractice();
     }
     P.currentLot = {name:cand[0], r:cand[1], cat:cat};
@@ -1021,8 +1029,11 @@ function humanSkip(){
     resolveLotWinner(P, P.soloPlayer, P.players[P.soloPlayer].budget===0?0:1);
     return;
   }
+  const passedOver = P.currentLot;
   const cand = P.catThemeKey ? drawCategoryCandidate(P, P.currentLot.cat) : P.itemPool.shift();
   if(!cand){ P.skipsUsed=4; return humanSkip(); }
+  // recycle the passed-over item to the back so skipping never shrinks the pool
+  (P.catThemeKey ? P.candidates : P.itemPool).push([passedOver.name, passedOver.r]);
   P.currentLot = {name:cand[0], r:cand[1], cat:P.currentLot.cat};
   renderPracticeDraft();
 }
@@ -1246,6 +1257,20 @@ function renderOnlineDraft(room){
   const amHost = room.players.find(p=>p.nickname===App.nickname && p.role==='host');
   $('host-watch-note').classList.toggle('hidden', !amHost);
 
+  // Between someone winning a lot and our next poll, this snapshot still shows
+  // the won lot as live. Rendering it would flash an already-drafted item as if
+  // it were up for auction, and any tap would be a bid on a lot that no longer
+  // exists (the "Not your turn" popup). Detect it and wait for fresh state.
+  if(g.currentLot && bidders.some(p=>(p.items||[]).some(it=>it.name===g.currentLot.name))){
+    $('status-line').textContent = 'Next lot coming up…';
+    $('draft-active-area').classList.add('hidden');
+    if(!App.staleResyncPending){
+      App.staleResyncPending = true;
+      setTimeout(()=>{ App.staleResyncPending = false; pollRoom(); }, 120);
+    }
+    return;
+  }
+
   if(!g.currentLot){
     $('draft-active-area').classList.add('hidden');
     $('status-line').textContent = 'Waiting for the next lot…';
@@ -1313,9 +1338,13 @@ async function onlineAction(type, payload){
     const data = await api(type, Object.assign({nickname: App.nickname}, payload||{}));
     applyRoomIfNewest(seq, data.room);
   } catch(e){
-    // Write conflicts resolve themselves on the next poll; surface anything
-    // else so a tap never silently does nothing.
-    if(!/room changed|conflict/i.test(e.message)){
+    // "Not your turn" and write conflicts are transient: the turn moved on
+    // between render and tap, or two writes raced. The server already retries
+    // stale reads internally, so blocking the game on an alert here just spams
+    // dialogs. Resync quietly and show a one-line status instead.
+    if(/not your turn|room changed|conflict|no active lot/i.test(e.message)){
+      $('status-line').textContent = 'Syncing…';
+    } else {
       alert(`Action failed: ${e.message}`);
     }
     pollRoom();

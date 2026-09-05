@@ -683,15 +683,29 @@ async function joinRoom(){
 }
 function startPolling(){
   if(App.pollTimer) clearInterval(App.pollTimer);
+  App.pollSeq = 0; App.lastRenderedSeq = 0; App.pollInFlight = false;
   App.pollTimer = setInterval(pollRoom, 1000);
   pollRoom();
 }
 function stopPolling(){ if(App.pollTimer){ clearInterval(App.pollTimer); App.pollTimer=null; } }
 async function pollRoom(){
+  if(App.pollInFlight) return; // don't stack requests if the network is slow
+  App.pollInFlight = true;
+  const seq = ++App.pollSeq;
   try{
     const data = await api('state', {});
-    renderRoomState(data.room);
+    applyRoomIfNewest(seq, data.room);
   }catch(e){ /* transient network hiccup, ignore */ }
+  finally{ App.pollInFlight = false; }
+}
+// A slow connection can make an older request's response arrive after a
+// newer one's — without this guard, a stale "state" fetch from just before
+// your action can silently paint the screen back to how it looked before you
+// acted, making it look like nothing happened (so you tap again for real).
+function applyRoomIfNewest(seq, room){
+  if(seq < App.lastRenderedSeq) return;
+  App.lastRenderedSeq = seq;
+  renderRoomState(room);
 }
 
 /* ============ LOBBY ============ */
@@ -1248,8 +1262,13 @@ async function onlineAction(type, payload){
   App.onlineActionInFlight = true;
   sndClick();
   try{
-    await api(type, Object.assign({nickname: App.nickname}, payload||{}));
-    pollRoom();
+    // The server already hands back the fresh room in its response — render
+    // that directly instead of firing a whole separate "state" fetch for
+    // data we already have. That redundant round-trip was adding real,
+    // avoidable latency to every single action.
+    const seq = ++App.pollSeq;
+    const data = await api(type, Object.assign({nickname: App.nickname}, payload||{}));
+    applyRoomIfNewest(seq, data.room);
   } catch(e){
     debugLog(`onlineAction("${type}") rejected: ${e.message}`);
     // A stale-write conflict resolves itself silently on the next poll — but
@@ -1540,9 +1559,10 @@ async function runDebugCommandOnline(cmd, rest){
     return;
   }
   try{
+    const seq = ++App.pollSeq;
     const data = await api('debug', {nickname: App.nickname, cmd, arg: rest});
     debugLog(`OK.`);
-    renderRoomState(data.room);
+    applyRoomIfNewest(seq, data.room);
   }catch(e){
     debugLog(`Command failed: ${e.message}`);
   }

@@ -4,6 +4,7 @@ const { getStore, connectLambda } = require('@netlify/blobs');
 const gamedata = require('./gamedata.js');
 const THEMES = gamedata.THEMES;
 const CATEGORY_THEMES = gamedata.CATEGORY_THEMES; // { football, sandwich, movie, ... }
+const ITEM_BY_ID = gamedata.ITEM_BY_ID;
 
 function store(){
   // NOTE: 'strong' consistency requires an internal uncachedEdgeURL that Netlify
@@ -107,7 +108,9 @@ function drawNextLot(room){
     }
     const wanting = bidders.map((p,i)=>i).filter(i => playerNeedsCat(bidders[i], cat, ct.required));
     if (!wanting.length) { room.phase='results'; g.currentLot=null; return; }
-    let cand = g.catQueue.shift();
+    // console-queued items for this category come up first
+    g.pendingNext = g.pendingNext || {};
+    let cand = (g.pendingNext[cat] && g.pendingNext[cat].length) ? g.pendingNext[cat].shift() : g.catQueue.shift();
     if (!cand) { g.catQueue = buildCategoryQueue(g.catThemeKey, cat, draftedNames(room)); cand = g.catQueue.shift(); }
     if (!cand) { room.phase='results'; g.currentLot=null; return; } // category genuinely exhausted
     g.currentLot = { name: cand[0], r: cand[1], cat };
@@ -116,7 +119,8 @@ function drawNextLot(room){
     if (bidders.every(p => p.items.length >= 5)) { room.phase='results'; g.currentLot=null; return; }
     const wanting = bidders.map((p,i)=>i).filter(i => playerNeedsFlat(bidders[i]));
     if (!wanting.length) { room.phase='results'; g.currentLot=null; return; }
-    const next = g.itemPool.shift();
+    g.pendingNext = g.pendingNext || {};
+    const next = (g.pendingNext._ && g.pendingNext._.length) ? g.pendingNext._.shift() : g.itemPool.shift();
     if (!next) { room.phase='results'; g.currentLot=null; return; }
     g.currentLot = { name: next.name, r: next.r, cat: null };
     startLotMode(g, wanting);
@@ -368,38 +372,49 @@ exports.handler = async (event) => {
           target.budget = cmd === 'money' ? amt : target.budget + amt;
           if (target.budget < 0) target.budget = 0;
         } else if (cmd === 'next') {
-          if (!arg) return { status: 400, error: 'Usage: next <item name>' };
-          const lower = arg.toLowerCase();
-          const pullFrom = (arr, getName) => {
-            if (!arr) return null;
-            const idx = arr.findIndex(it => getName(it).toLowerCase().includes(lower));
-            if (idx === -1) return null;
-            return arr.splice(idx, 1)[0];
-          };
-          if (g.catThemeKey) {
-            const ct = CATEGORY_THEMES[g.catThemeKey];
-            const cat = g.currentLot ? g.currentLot.cat : ct.cats[g.catIdx];
-            let found = pullFrom(g.catQueue, it => it[0]);
-            if (!found) {
-              const combined = (ct.pool[cat]||[]).concat(ct.icons ? (ct.icons[cat]||[]) : []);
-              const match = combined.find(it => it[0].toLowerCase().includes(lower));
-              if (match) found = match.slice();
-            }
-            if (!found) return { status: 400, error: `No match for "${arg}" in category ${cat}` };
-            if (g.currentLot) g.currentLot = { name: found[0], r: found[1], cat };
-            else { g.catQueue = g.catQueue || []; g.catQueue.unshift(found); }
+          if (!arg) return { status: 400, error: 'Usage: next <id or item name>' };
+          const drafted = draftedNames(room);
+          const themeKey = g.catThemeKey || room.theme.key;
+
+          // resolve by numeric id first, then by (partial) name
+          let resolved = null;
+          if (/^\d+$/.test(arg.trim())) {
+            const rec = ITEM_BY_ID[parseInt(arg.trim(), 10)];
+            if (!rec) return { status: 400, error: `No item with id ${arg.trim()}` };
+            if (rec.themeKey !== themeKey) return { status: 400, error: `#${rec.id} "${rec.name}" belongs to a different theme` };
+            resolved = rec;
           } else {
-            let found = pullFrom(g.itemPool, it => it.name);
-            if (!found) return { status: 400, error: `No match for "${arg}"` };
-            if (g.currentLot) g.currentLot = { name: found.name, r: found.r, cat: null };
-            else { g.itemPool = g.itemPool || []; g.itemPool.unshift(found); }
+            const lower = arg.toLowerCase();
+            const all = Object.keys(ITEM_BY_ID).map(k => ITEM_BY_ID[k])
+              .filter(r => r.themeKey === themeKey && r.name.toLowerCase().includes(lower));
+            if (!all.length) return { status: 400, error: `No match for "${arg}" in this theme` };
+            resolved = all[0];
           }
+          if (drafted.has(resolved.name)) return { status: 400, error: `"${resolved.name}" is already drafted` };
+          if (g.currentLot && g.currentLot.name === resolved.name) {
+            return { status: 400, error: `"${resolved.name}" is already the current lot` };
+          }
+
+          // Queue it — the lot being bid on right now is left alone.
+          g.pendingNext = g.pendingNext || {};
+          const key = resolved.cat || '_';
+          g.pendingNext[key] = g.pendingNext[key] || [];
+          const dupe = g.pendingNext[key].some(it => (it[0] || it.name) === resolved.name);
+          if (!dupe) {
+            g.pendingNext[key].push(g.catThemeKey ? [resolved.name, resolved.r] : { name: resolved.name, r: resolved.r });
+            // remove it from the normal queue so it can't also appear later
+            const strip = arr => { if(!arr) return; const i = arr.findIndex(x => (x[0] || x.name) === resolved.name); if (i > -1) arr.splice(i,1); };
+            strip(g.catQueue); strip(g.itemPool);
+          }
+          g.queuedNotice = `#${resolved.id} ${resolved.name}${resolved.cat ? ' ('+resolved.cat+')' : ''} queued up next`;
         } else {
           return { status: 400, error: `Unknown command: ${cmd}` };
         }
       });
       if (result.error) return json(result.status, { error: result.error });
-      return json(200, { room: result.room });
+      const notice = result.room && result.room.game ? result.room.game.queuedNotice : null;
+      if (result.room && result.room.game) delete result.room.game.queuedNotice;
+      return json(200, { room: result.room, notice });
     }
 
     return json(400, { error: 'Unknown action' });

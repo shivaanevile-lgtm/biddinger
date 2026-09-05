@@ -299,6 +299,58 @@ exports.handler = async (event) => {
       return json(200, { room: result.room });
     }
 
+    if (action === 'debug') {
+      // Debug console commands (money / next) — same-device party game, not a
+      // public service, so this is intentionally low-ceremony: any bidder in
+      // the room can adjust their own budget or force an upcoming item/player.
+      const code = body.roomCode;
+      const result = await readMutateWrite(s, code, (room) => {
+        if (!room.game) return { status: 400, error: 'No active game' };
+        const g = room.game;
+        const bidders = room.players.filter(p => p.role !== 'host');
+        const myIdx = bidders.findIndex(p => p.nickname === body.nickname);
+        if (myIdx < 0) return { status: 403, error: 'Not a bidder in this room' };
+        const cmd = (body.cmd || '').toLowerCase();
+        const arg = body.arg || '';
+
+        if (cmd === 'money' || cmd === 'money+') {
+          const amt = parseInt(arg, 10);
+          if (isNaN(amt)) return { status: 400, error: 'Usage: money <amount>' };
+          bidders[myIdx].budget = cmd === 'money' ? amt : bidders[myIdx].budget + amt;
+        } else if (cmd === 'next') {
+          if (!arg) return { status: 400, error: 'Usage: next <item name>' };
+          const lower = arg.toLowerCase();
+          const pullFrom = (arr, getName) => {
+            if (!arr) return null;
+            const idx = arr.findIndex(it => getName(it).toLowerCase().includes(lower));
+            if (idx === -1) return null;
+            return arr.splice(idx, 1)[0];
+          };
+          if (g.isFootball) {
+            const cat = g.currentLot ? g.currentLot.cat : FOOTBALL_CATS[g.footballCatIdx];
+            let found = pullFrom(g.footballQueue, it => it[0]);
+            if (!found) {
+              const combined = (FOOTBALL.pool[cat]||[]).concat(FOOTBALL.icons[cat]||[]);
+              const match = combined.find(it => it[0].toLowerCase().includes(lower));
+              if (match) found = match.slice();
+            }
+            if (!found) return { status: 400, error: `No match for "${arg}" in category ${cat}` };
+            if (g.currentLot) g.currentLot = { name: found[0], r: found[1], cat };
+            else { g.footballQueue = g.footballQueue || []; g.footballQueue.unshift(found); }
+          } else {
+            let found = pullFrom(g.itemPool, it => it.name);
+            if (!found) return { status: 400, error: `No match for "${arg}"` };
+            if (g.currentLot) g.currentLot = { name: found.name, r: found.r, cat: null };
+            else { g.itemPool = g.itemPool || []; g.itemPool.unshift(found); }
+          }
+        } else {
+          return { status: 400, error: `Unknown command: ${cmd}` };
+        }
+      });
+      if (result.error) return json(result.status, { error: result.error });
+      return json(200, { room: result.room });
+    }
+
     return json(400, { error: 'Unknown action' });
   } catch (err) {
     return json(500, { error: err.message || 'Server error' });

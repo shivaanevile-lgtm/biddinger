@@ -120,6 +120,15 @@
   .btn-raise:active{ background:var(--rust-dark); }
   .btn-skip{ background:transparent; color:var(--rust); border:1.5px solid var(--rust); }
   .btn-skip:active{ background:#fdf1ec; }
+  #host-pick-panel{ margin-top:4px; }
+  .pick-row{ display:flex; justify-content:space-between; align-items:center; gap:10px;
+    background:#fffdf8; border:1px solid var(--line); border-radius:10px;
+    padding:11px 13px; margin-bottom:7px; cursor:pointer; }
+  .pick-row:active{ background:var(--cream-dark); }
+  .pick-row .pname{ font-size:14.5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .pick-row .pid{ font-family:'SF Mono',monospace; font-size:11px; color:var(--ink-soft); margin-right:8px; }
+  .pick-row .prate{ font-family:'SF Mono',monospace; font-size:13px; color:var(--gold); white-space:nowrap; }
+  .pick-count{ font-size:12px; color:var(--ink-soft); margin-bottom:8px; font-style:italic; }
   .bid-caption{ text-align:center; font-size:13px; color:var(--ink-soft); font-style:italic; margin-top:10px; }
 
   .status-line{ text-align:center; font-size:13px; color:var(--ink-soft); margin:10px 0; min-height:18px; }
@@ -277,6 +286,11 @@
         <div class="bid-caption" id="bid-caption">You have $20 left.</div>
       </div>
       <div id="waiting-turn" class="waiting-note hidden">Waiting for the other player…</div>
+    </div>
+
+    <div id="host-pick-panel" class="hidden">
+      <div class="section-label" id="host-pick-label">choose the next lot</div>
+      <div id="host-pick-list"></div>
     </div>
 
     <div class="section-label">players</div>
@@ -757,6 +771,7 @@ async function pollRoom(){
   const seq = ++App.pollSeq;
   try{
     const data = await api('state', {});
+    if(data.options) App.hostPickOptions = data.options;
     applyRoomIfNewest(seq, data.room);
   }catch(e){ /* transient network hiccup, ignore */ }
   finally{ App.pollInFlight = false; }
@@ -1300,6 +1315,23 @@ function renderOnlineDraft(room){
     return;
   }
 
+  // Hosted rooms: the host is the auctioneer and chooses each lot.
+  if(g.awaitingHostPick){
+    $('draft-active-area').classList.add('hidden');
+    if(amHost){
+      $('host-watch-note').classList.add('hidden');
+      $('status-line').textContent = g.pickCat
+        ? `You're picking the next ${roleLabel(room.theme.key, g.pickCat)} lot`
+        : "You're picking the next lot";
+      renderHostPicker(room);
+    } else {
+      $('host-pick-panel').classList.add('hidden');
+      $('status-line').textContent = `${(roomHostName(room)||'The host')} is choosing the next lot…`;
+    }
+    return;
+  }
+  $('host-pick-panel').classList.add('hidden');
+
   if(!g.currentLot){
     $('draft-active-area').classList.add('hidden');
     $('status-line').textContent = 'Waiting for the next lot…';
@@ -1341,18 +1373,49 @@ function renderOnlineDraft(room){
     if(g.soloPlayerIdx===myIdx){
       $('status-line').textContent = "Nobody else needs this — it's yours.";
       const budget = bidders[myIdx].budget;
+      // In a hosted room the host chooses the lots, so there's no reroll to offer.
+      const canSkip = !amHost && !roomHostName(room);
       renderBidControls({
         budget, minAmount:1, freeMode: budget===0,
         primaryLabel: 'Claim',
-        secondaryLabel: `Skip it (${3-(g.skipsUsed||0)} left)`,
+        secondaryLabel: canSkip ? `Skip it (${3-(g.skipsUsed||0)} left)` : '',
         onPrimary: (amt)=>onlineAction('claim',{amount:amt}),
-        onSecondary: ()=>onlineAction('skip',{})
+        onSecondary: canSkip ? ()=>onlineAction('skip',{}) : ()=>{}
       });
     } else {
       $('status-line').textContent = `${bidders[g.soloPlayerIdx].nickname} is claiming this one…`;
       $('waiting-turn').classList.remove('hidden');
     }
   }
+}
+function roomHostName(room){
+  const h = room.players.find(p=>p.role==='host');
+  return h && h.nickname;
+}
+function renderHostPicker(room){
+  const panel = $('host-pick-panel');
+  panel.classList.remove('hidden');
+  const opts = App.hostPickOptions || [];
+  const g = room.game;
+  const short = g.pickCat ? catShortLabel(room.theme.key, g.pickCat) : null;
+  // keep abbreviations like GK/DEF upper-case; lower-case real words
+  $('host-pick-label').textContent = short
+    ? `choose the next ${short === short.toUpperCase() ? short : short.toLowerCase()}`
+    : 'choose the next lot';
+  const list = $('host-pick-list');
+  if(!opts.length){ list.innerHTML = '<div class="waiting-note">Loading options…</div>'; return; }
+  const sorted = opts.slice().sort((a,b)=>(itemIdFor(a.name)||0)-(itemIdFor(b.name)||0));
+  list.innerHTML = `<div class="pick-count">${sorted.length} still available — tap one to put it up</div>` +
+    sorted.map(o=>`<div class="pick-row" data-name="${escapeHtml(o.name)}">
+      <span class="pname"><span class="pid">#${itemIdFor(o.name)||'?'}</span>${escapeHtml(o.name)}</span>
+      <span class="prate">${o.r}/10</span></div>`).join('');
+  list.querySelectorAll('.pick-row').forEach(el=>{
+    el.onclick = ()=>{
+      if(App.onlineActionInFlight) return;
+      list.querySelectorAll('.pick-row').forEach(x=>x.style.opacity='0.45');
+      onlineAction('hostPick', {item: el.dataset.name});
+    };
+  });
 }
 async function onlineAction(type, payload){
   // One tap can fire two click events on mobile; the duplicate would land
@@ -1365,6 +1428,7 @@ async function onlineAction(type, payload){
     // directly rather than firing a second "state" fetch for data we have.
     const seq = ++App.pollSeq;
     const data = await api(type, Object.assign({nickname: App.nickname}, payload||{}));
+    if(data.options) App.hostPickOptions = data.options;
     applyRoomIfNewest(seq, data.room);
   } catch(e){
     // "Not your turn" and write conflicts are transient: the turn moved on

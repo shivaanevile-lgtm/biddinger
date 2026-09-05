@@ -167,7 +167,7 @@ function sleep(ms){ return new Promise(r => setTimeout(r, ms)); }
 // or {status, error} for a genuine validation failure (never retried).
 async function readMutateWrite(s, code, mutateFn, opts){
   opts = opts || {};
-  const maxAttempts = opts.maxAttempts || 4;
+  const maxAttempts = opts.maxAttempts || 6;
   let lastRetryableFail = null;
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     let got = await s.getWithMetadata(code, { type: 'json' });
@@ -185,14 +185,14 @@ async function readMutateWrite(s, code, mutateFn, opts){
         // your turn, just not on the copy this read happened to land on.
         // Re-read fresh and check again before reporting it as real.
         lastRetryableFail = fail;
-        await sleep(150 * (attempt + 1));
+        await sleep(Math.min(150 * (attempt + 1), 700));
         continue;
       }
       return fail; // logical error — don't retry, it won't resolve itself
     }
     const ok = await s.setJSON(code, room, { onlyIfMatch: got.etag });
     if (ok) return { room };
-    await sleep(200 * (attempt + 1));
+    await sleep(Math.min(200 * (attempt + 1), 900));
   }
   return lastRetryableFail || { status: 409, error: 'Room changed, please retry' };
 }
@@ -259,11 +259,11 @@ exports.handler = async (event) => {
     if (action === 'raise' || action === 'pass' || action === 'skip' || action === 'claim') {
       const code = body.roomCode;
       const result = await readMutateWrite(s, code, (room) => {
-        if (room.phase !== 'drafting' || !room.game || !room.game.currentLot) return { status: 400, error: 'No active lot' };
+        if (room.phase !== 'drafting' || !room.game || !room.game.currentLot) return { status: 400, error: 'No active lot', retryable: true };
         const g = room.game;
         const bidders = room.players.filter(p => p.role !== 'host');
         const myIdx = bidders.findIndex(p => p.nickname === body.nickname);
-        if (myIdx < 0) return { status: 403, error: 'Not a bidder in this room' };
+        if (myIdx < 0) return { status: 403, error: 'Not a bidder in this room', retryable: true };
 
         if (action === 'raise') {
           if (g.mode !== 'contested' || g.turnIdx !== myIdx) return { status: 400, error: 'Not your turn', retryable: true };
@@ -347,18 +347,26 @@ exports.handler = async (event) => {
       // the room can adjust their own budget or force an upcoming item/player.
       const code = body.roomCode;
       const result = await readMutateWrite(s, code, (room) => {
-        if (!room.game) return { status: 400, error: 'No active game' };
+        if (!room.game) return { status: 400, error: 'No active game', retryable: true };
         const g = room.game;
         const bidders = room.players.filter(p => p.role !== 'host');
         const myIdx = bidders.findIndex(p => p.nickname === body.nickname);
-        if (myIdx < 0) return { status: 403, error: 'Not a bidder in this room' };
+        if (myIdx < 0) return { status: 403, error: 'Not a bidder in this room', retryable: true };
         const cmd = (body.cmd || '').toLowerCase();
         const arg = body.arg || '';
 
         if (cmd === 'money' || cmd === 'money+') {
-          const amt = parseInt(arg, 10);
-          if (isNaN(amt)) return { status: 400, error: 'Usage: money <amount>' };
-          bidders[myIdx].budget = cmd === 'money' ? amt : bidders[myIdx].budget + amt;
+          const parts = String(arg).trim().split(/\s+/);
+          const amt = parseInt(parts[0], 10);
+          if (isNaN(amt)) return { status: 400, error: 'Usage: money <amount> [nickname]' };
+          const targetName = parts.slice(1).join(' ').trim();
+          let target = bidders[myIdx];
+          if (targetName) {
+            target = bidders.find(p => p.nickname.toLowerCase() === targetName.toLowerCase());
+            if (!target) return { status: 400, error: `No bidder named "${targetName}". In this room: ${bidders.map(p=>p.nickname).join(', ')}` };
+          }
+          target.budget = cmd === 'money' ? amt : target.budget + amt;
+          if (target.budget < 0) target.budget = 0;
         } else if (cmd === 'next') {
           if (!arg) return { status: 400, error: 'Usage: next <item name>' };
           const lower = arg.toLowerCase();

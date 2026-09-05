@@ -312,7 +312,7 @@
     </div>
     <div id="debug-log-content">Type a command below.</div>
     <div class="debug-cmd-row">
-      <input type="text" id="debug-cmd-input" placeholder="money 100 / money+ 5 / next Haaland">
+      <input type="text" id="debug-cmd-input" placeholder="list · money 100 · next Haaland">
       <button id="btn-debug-run">Run</button>
     </div>
   </div>
@@ -793,6 +793,7 @@ $('btn-copy-code').onclick = async ()=>{
 /* ============ ROOM STATE RENDER DISPATCH ============ */
 function renderRoomState(room){
   if(!room) return;
+  App.lastRoom = room; // used by the console's `list` command
   if(room.phase==='lobby'){ enterLobby(room); return; }
   if(room.phase==='drafting'){ showScreen('screen-draft'); renderOnlineDraft(room); return; }
   if(room.phase==='results'){ showScreen('screen-results'); renderResultsFromRoom(room); return; }
@@ -1570,6 +1571,48 @@ $('btn-debug-copy').onclick = async ()=>{
 };
 
 /* ============ DEBUG CONSOLE COMMANDS ============ */
+// Cheatsheet: what's still available in the category currently being drafted.
+// Item data lives in the page already, so this needs no server round-trip.
+function listCurrentCategory(){
+  let catThemeKey, cat, draftedSet, remainingPool, themeName;
+
+  if(App.mode==='practice'){
+    const P = App.practice;
+    if(!P){ debugLog('No practice game running.'); return; }
+    catThemeKey = P.catThemeKey;
+    cat = P.currentLot ? P.currentLot.cat : (catThemeKey ? CATEGORY_THEMES[catThemeKey].cats[P.catIdx] : null);
+    themeName = P.themeName;
+    draftedSet = draftedNamesPractice(P);
+    remainingPool = catThemeKey ? null : (P.itemPool||[]).map(it=>[it[0], it[1]]);
+  } else {
+    const room = App.lastRoom;
+    if(!room || !room.game){ debugLog('No online game state yet — wait for the next refresh.'); return; }
+    catThemeKey = CATEGORY_THEMES[room.theme.key] ? room.theme.key : null;
+    const g = room.game;
+    cat = g.currentLot ? g.currentLot.cat : (catThemeKey ? CATEGORY_THEMES[catThemeKey].cats[g.catIdx] : null);
+    themeName = room.theme.name;
+    draftedSet = new Set();
+    room.players.forEach(p=>(p.items||[]).forEach(it=>draftedSet.add(it.name)));
+    remainingPool = catThemeKey ? null : (g.itemPool||[]).map(it=>[it.name, it.r]);
+  }
+
+  let entries, header;
+  if(catThemeKey){
+    const ct = CATEGORY_THEMES[catThemeKey];
+    entries = (ct.pool[cat]||[]).concat(ct.icons ? (ct.icons[cat]||[]) : []);
+    header = `${roleLabel(catThemeKey, cat)} — ${entries.length} in pool`;
+  } else {
+    entries = remainingPool || [];
+    header = `${themeName} — ${entries.length} left in the pool`;
+  }
+
+  const avail = entries.filter(e=>!draftedSet.has(e[0])).sort((a,b)=>b[1]-a[1]);
+  const taken = entries.filter(e=>draftedSet.has(e[0]));
+  debugLog(header);
+  if(!avail.length) debugLog('  (nothing available)');
+  else debugLog('  ' + avail.map(e=>`${e[0]} (${e[1]})`).join('\n  '));
+  if(taken.length) debugLog(`  already drafted: ${taken.map(e=>e[0]).join(', ')}`);
+}
 function findAndPullPlain(pool, nameSubstr){
   if(!pool) return null;
   const lower = nameSubstr.toLowerCase();
@@ -1584,8 +1627,9 @@ function runDebugCommand(raw){
   const parts = raw.split(/\s+/);
   const cmd = (parts[0]||'').toLowerCase();
   const rest = parts.slice(1).join(' ');
+  if(cmd==='list' || cmd==='items'){ listCurrentCategory(); return; }
   if(cmd==='help'){
-    debugLog('Commands: money <amt>, money+ <amt>, next <item name>, state');
+    debugLog('money <amt> [nickname] · money+ <amt> [nickname] · next <item name> · list · state');
     return;
   }
   if(App.mode==='practice') runDebugCommandPractice(cmd, rest);
@@ -1596,10 +1640,18 @@ function runDebugCommandPractice(cmd, rest){
   const P = App.practice;
   if(!P){ debugLog('No practice game running.'); return; }
   if(cmd==='money' || cmd==='money+'){
-    const amt = parseInt(rest,10);
-    if(isNaN(amt)){ debugLog('Usage: money <amount>  (or money+ <amount> to add)'); return; }
-    P.players[0].budget = cmd==='money' ? amt : P.players[0].budget + amt;
-    debugLog(`Your budget is now $${P.players[0].budget}.`);
+    const parts = rest.trim().split(/\s+/);
+    const amt = parseInt(parts[0],10);
+    if(isNaN(amt)){ debugLog('Usage: money <amount> [nickname]'); return; }
+    const targetName = parts.slice(1).join(' ').trim();
+    let target = P.players[0];
+    if(targetName){
+      target = P.players.find(p=>p.nick.toLowerCase()===targetName.toLowerCase());
+      if(!target){ debugLog(`No player named "${targetName}". In this game: ${P.players.map(p=>p.nick).join(', ')}`); return; }
+    }
+    target.budget = cmd==='money' ? amt : target.budget + amt;
+    if(target.budget < 0) target.budget = 0;
+    debugLog(`${target.nick}'s budget is now $${target.budget}.`);
     if(P.currentLot) renderPracticeDraft();
   } else if(cmd==='next'){
     if(!rest){ debugLog('Usage: next <item name>'); return; }
@@ -1639,7 +1691,10 @@ async function runDebugCommandOnline(cmd, rest){
   try{
     const seq = ++App.pollSeq;
     const data = await api('debug', {nickname: App.nickname, cmd, arg: rest});
-    debugLog(`OK.`);
+    const bidders = data.room.players.filter(p=>p.role!=='host');
+    debugLog(cmd.startsWith('money')
+      ? bidders.map(p=>`${p.nickname}: $${p.budget}`).join(' · ')
+      : 'OK.');
     applyRoomIfNewest(seq, data.room);
   }catch(e){
     debugLog(`Command failed: ${e.message}`);

@@ -93,6 +93,8 @@ function newGame(themeResolved){
 function playerNeedsFlat(p){ return p.items.length < 5; }
 function playerNeedsCat(p, cat, requiredMap){ return p.items.filter(it => it.cat === cat).length < requiredMap[cat]; }
 
+function roomHost(room){ return room.players.find(p => p.role === 'host'); }
+
 function drawNextLot(room){
   const g = room.game;
   const bidders = room.players.filter(p => p.role !== 'host');
@@ -108,6 +110,12 @@ function drawNextLot(room){
     }
     const wanting = bidders.map((p,i)=>i).filter(i => playerNeedsCat(bidders[i], cat, ct.required));
     if (!wanting.length) { room.phase='results'; g.currentLot=null; return; }
+    // In a hosted room the host is the auctioneer: pause and let them choose
+    // the next lot instead of drawing one automatically.
+    if (roomHost(room)) {
+      g.awaitingHostPick = true; g.pickCat = cat; g.currentLot = null; g.mode = 'idle';
+      return;
+    }
     // console-queued items for this category come up first
     g.pendingNext = g.pendingNext || {};
     let cand = (g.pendingNext[cat] && g.pendingNext[cat].length) ? g.pendingNext[cat].shift() : g.catQueue.shift();
@@ -119,12 +127,32 @@ function drawNextLot(room){
     if (bidders.every(p => p.items.length >= 5)) { room.phase='results'; g.currentLot=null; return; }
     const wanting = bidders.map((p,i)=>i).filter(i => playerNeedsFlat(bidders[i]));
     if (!wanting.length) { room.phase='results'; g.currentLot=null; return; }
+    if (roomHost(room)) {
+      g.awaitingHostPick = true; g.pickCat = null; g.currentLot = null; g.mode = 'idle';
+      return;
+    }
     g.pendingNext = g.pendingNext || {};
     const next = (g.pendingNext._ && g.pendingNext._.length) ? g.pendingNext._.shift() : g.itemPool.shift();
     if (!next) { room.phase='results'; g.currentLot=null; return; }
     g.currentLot = { name: next.name, r: next.r, cat: null };
     startLotMode(g, wanting);
   }
+}
+
+// Items the host may choose from right now: everything in the live category
+// that nobody has drafted yet.
+function hostPickOptions(room){
+  const g = room.game;
+  const drafted = draftedNames(room);
+  if (g.catThemeKey) {
+    const ct = CATEGORY_THEMES[g.catThemeKey];
+    const cat = g.pickCat || ct.cats[g.catIdx];
+    return (ct.pool[cat]||[]).concat(ct.icons ? (ct.icons[cat]||[]) : [])
+      .filter(it => !drafted.has(it[0]))
+      .map(it => ({ name: it[0], r: it[1], cat }));
+  }
+  return (g.itemPool||[]).filter(it => !drafted.has(it.name))
+    .map(it => ({ name: it.name, r: it.r, cat: null }));
 }
 function startLotMode(g, wanting){
   if (wanting.length >= 2) {
@@ -257,13 +285,15 @@ exports.handler = async (event) => {
       const code = body.roomCode;
       const got = await s.get(code, { type: 'json' });
       if (!got) return json(404, { error: 'Room not found' });
-      return json(200, { room: got });
+      const opts = (got.game && got.game.awaitingHostPick) ? hostPickOptions(got) : null;
+      return json(200, { room: got, options: opts });
     }
 
     if (action === 'raise' || action === 'pass' || action === 'skip' || action === 'claim') {
       const code = body.roomCode;
       const result = await readMutateWrite(s, code, (room) => {
         if (room.phase !== 'drafting' || !room.game || !room.game.currentLot) return { status: 400, error: 'No active lot', retryable: true };
+        if (room.game.awaitingHostPick) return { status: 400, error: 'Waiting for the host to choose the lot', retryable: true };
         const g = room.game;
         const bidders = room.players.filter(p => p.role !== 'host');
         const myIdx = bidders.findIndex(p => p.nickname === body.nickname);
@@ -294,6 +324,7 @@ exports.handler = async (event) => {
             resolveLotWinner(room, g.currentBidderIdx, g.currentBid);
           }
         } else if (action === 'skip') {
+          if (roomHost(room)) return { status: 400, error: 'The host chooses the lots in this room' };
           if (g.mode !== 'solo' || g.soloPlayerIdx !== myIdx) return { status: 400, error: 'Not your turn', retryable: true };
           g.skipsUsed++;
           if (g.skipsUsed >= 4) {
@@ -343,6 +374,55 @@ exports.handler = async (event) => {
       });
       if (result.error) return json(result.status, { error: result.error });
       return json(200, { room: result.room });
+    }
+
+    if (action === 'hostPick') {
+      const code = body.roomCode;
+      const result = await readMutateWrite(s, code, (room) => {
+        const host = roomHost(room);
+        if (!host) return { status: 400, error: 'This room has no host' };
+        if (host.nickname !== body.nickname) return { status: 403, error: 'Only the host picks lots' };
+        const g = room.game;
+        if (!g) return { status: 400, error: 'No active game', retryable: true };
+        if (!g.awaitingHostPick) return { status: 400, error: 'A lot is already up', retryable: true };
+
+        const options = hostPickOptions(room);
+        if (!options.length) { room.phase = 'results'; g.currentLot = null; g.awaitingHostPick = false; return; }
+
+        const arg = String(body.item || '').trim();
+        let chosen = null;
+        if (/^\d+$/.test(arg)) {
+          const rec = ITEM_BY_ID[parseInt(arg, 10)];
+          if (rec) chosen = options.find(o => o.name === rec.name);
+        }
+        if (!chosen && arg) {
+          const lower = arg.toLowerCase();
+          chosen = options.find(o => o.name.toLowerCase() === lower)
+                || options.find(o => o.name.toLowerCase().includes(lower));
+        }
+        if (!chosen) return { status: 400, error: `"${body.item}" isn't available in this category` };
+
+        // pull it out of the normal queue so it can't come up twice
+        const strip = arr => { if(!arr) return; const i = arr.findIndex(x => (x[0] || x.name) === chosen.name); if (i > -1) arr.splice(i,1); };
+        strip(g.catQueue); strip(g.itemPool);
+
+        const bidders = room.players.filter(p => p.role !== 'host');
+        let wanting;
+        if (g.catThemeKey) {
+          const ct = CATEGORY_THEMES[g.catThemeKey];
+          wanting = bidders.map((p,i)=>i).filter(i => playerNeedsCat(bidders[i], chosen.cat, ct.required));
+        } else {
+          wanting = bidders.map((p,i)=>i).filter(i => playerNeedsFlat(bidders[i]));
+        }
+        if (!wanting.length) { room.phase='results'; g.currentLot=null; g.awaitingHostPick=false; return; }
+
+        g.awaitingHostPick = false;
+        g.pickCat = null;
+        g.currentLot = { name: chosen.name, r: chosen.r, cat: chosen.cat };
+        startLotMode(g, wanting);
+      });
+      if (result.error) return json(result.status, { error: result.error });
+      return json(200, { room: result.room, options: hostPickOptions(result.room) });
     }
 
     if (action === 'debug') {

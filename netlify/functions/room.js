@@ -1,11 +1,9 @@
 const { getStore, connectLambda } = require('@netlify/blobs');
 
-const FOOTBALL_CATS = ['GK','DEF','MID','ATT'];
-const FOOTBALL_REQUIRED = { GK:1, DEF:1, MID:2, ATT:1 };
-
-// ---- theme/football data (kept small + self-contained for the function) ----
-const THEMES = require('./gamedata.js').THEMES;
-const FOOTBALL = require('./gamedata.js').FOOTBALL;
+// ---- theme/category-draft data (kept small + self-contained for the function) ----
+const gamedata = require('./gamedata.js');
+const THEMES = gamedata.THEMES;
+const CATEGORY_THEMES = gamedata.CATEGORY_THEMES; // { football, sandwich, movie, ... }
 
 function store(){
   // NOTE: 'strong' consistency requires an internal uncachedEdgeURL that Netlify
@@ -34,28 +32,33 @@ function shuffle(arr){
 function pick(arr){ return arr[Math.floor(Math.random()*arr.length)]; }
 
 function resolveThemeItems(theme){
-  if (theme.themeKey === 'football') return { football:true, name:'5-a-Side Draft', emoji:'⚽' };
+  if (CATEGORY_THEMES[theme.themeKey]) {
+    const ct = CATEGORY_THEMES[theme.themeKey];
+    return { categoryTheme: theme.themeKey, name: ct.name, emoji: ct.emoji };
+  }
   if (theme.themeKey === 'custom' && theme.customTheme) {
-    return { football:false, name: theme.customTheme.name, emoji:'✏️', items: theme.customTheme.items };
+    return { categoryTheme: null, name: theme.customTheme.name, emoji:'✏️', items: theme.customTheme.items };
   }
   const t = THEMES[theme.themeKey];
   if (!t) throw new Error('Unknown theme');
-  return { football:false, name:t.name, emoji:t.emoji, items:t.items };
+  return { categoryTheme: null, name:t.name, emoji:t.emoji, items:t.items };
 }
 
-function buildFootballQueue(cat){
-  const iconsAll = shuffle(FOOTBALL.icons[cat].slice());
+function buildCategoryQueue(catThemeKey, cat){
+  const ct = CATEGORY_THEMES[catThemeKey];
+  const poolShuffled = shuffle(ct.pool[cat].slice());
+  if (!ct.icons) return poolShuffled;
+  const iconsAll = shuffle(ct.icons[cat].slice());
   const icons3 = iconsAll.slice(0,3);
   const lead = icons3[0];
   const restIcons = icons3.slice(1);
-  const poolShuffled = shuffle(FOOTBALL.pool[cat].slice());
   const rest = shuffle(restIcons.concat(poolShuffled));
   return [lead].concat(rest);
 }
 
 function newGame(themeResolved){
   const g = {
-    isFootball: !!themeResolved.football,
+    catThemeKey: themeResolved.categoryTheme || null,
     turnIdx: 0,
     openerIdx: 0,
     mode: 'idle',
@@ -67,12 +70,13 @@ function newGame(themeResolved){
     passStreak: 0,
     tickerLog: [],
     bidLog: [],
-    footballCatIdx: 0,
-    footballQueue: null,
+    catIdx: 0,
+    catQueue: null,
     itemPool: null
   };
-  if (g.isFootball) {
-    g.footballQueue = buildFootballQueue(FOOTBALL_CATS[0]);
+  if (g.catThemeKey) {
+    const ct = CATEGORY_THEMES[g.catThemeKey];
+    g.catQueue = buildCategoryQueue(g.catThemeKey, ct.cats[0]);
   } else {
     g.itemPool = shuffle(themeResolved.items.map(it => ({ name: it[0], r: it[1] })));
   }
@@ -80,24 +84,25 @@ function newGame(themeResolved){
 }
 
 function playerNeedsFlat(p){ return p.items.length < 5; }
-function playerNeedsCat(p, cat){ return p.items.filter(it => it.cat === cat).length < FOOTBALL_REQUIRED[cat]; }
+function playerNeedsCat(p, cat, requiredMap){ return p.items.filter(it => it.cat === cat).length < requiredMap[cat]; }
 
 function drawNextLot(room){
   const g = room.game;
   const bidders = room.players.filter(p => p.role !== 'host');
-  if (g.isFootball) {
-    let cat = FOOTBALL_CATS[g.footballCatIdx];
-    while (g.footballCatIdx < FOOTBALL_CATS.length && !bidders.some(p => playerNeedsCat(p, cat))) {
-      g.footballCatIdx++;
-      if (g.footballCatIdx >= FOOTBALL_CATS.length) { room.phase = 'results'; g.currentLot=null; return; }
-      cat = FOOTBALL_CATS[g.footballCatIdx];
-      g.footballQueue = buildFootballQueue(cat);
+  if (g.catThemeKey) {
+    const ct = CATEGORY_THEMES[g.catThemeKey];
+    let cat = ct.cats[g.catIdx];
+    while (g.catIdx < ct.cats.length && !bidders.some(p => playerNeedsCat(p, cat, ct.required))) {
+      g.catIdx++;
+      if (g.catIdx >= ct.cats.length) { room.phase = 'results'; g.currentLot=null; return; }
+      cat = ct.cats[g.catIdx];
+      g.catQueue = buildCategoryQueue(g.catThemeKey, cat);
       g.skipsUsed = 0;
     }
-    const wanting = bidders.map((p,i)=>i).filter(i => playerNeedsCat(bidders[i], cat));
+    const wanting = bidders.map((p,i)=>i).filter(i => playerNeedsCat(bidders[i], cat, ct.required));
     if (!wanting.length) { room.phase='results'; g.currentLot=null; return; }
-    let cand = g.footballQueue.shift();
-    if (!cand) { g.footballQueue = buildFootballQueue(cat); cand = g.footballQueue.shift(); }
+    let cand = g.catQueue.shift();
+    if (!cand) { g.catQueue = buildCategoryQueue(g.catThemeKey, cat); cand = g.catQueue.shift(); }
     g.currentLot = { name: cand[0], r: cand[1], cat };
     startLotMode(g, wanting);
   } else {
@@ -276,8 +281,8 @@ exports.handler = async (event) => {
             resolveLotWinner(room, myIdx, bidders[myIdx].budget === 0 ? 0 : 1);
           } else {
             const cat = g.currentLot.cat;
-            let cand = g.isFootball ? g.footballQueue.shift() : g.itemPool.shift();
-            if (cand) g.currentLot = g.isFootball ? { name: cand[0], r: cand[1], cat } : { name: cand.name, r: cand.r, cat: null };
+            let cand = g.catThemeKey ? g.catQueue.shift() : g.itemPool.shift();
+            if (cand) g.currentLot = g.catThemeKey ? { name: cand[0], r: cand[1], cat } : { name: cand.name, r: cand.r, cat: null };
           }
         } else if (action === 'claim') {
           if (g.mode !== 'solo' || g.soloPlayerIdx !== myIdx) return { status: 400, error: 'Not your turn', retryable: true };
@@ -336,17 +341,18 @@ exports.handler = async (event) => {
             if (idx === -1) return null;
             return arr.splice(idx, 1)[0];
           };
-          if (g.isFootball) {
-            const cat = g.currentLot ? g.currentLot.cat : FOOTBALL_CATS[g.footballCatIdx];
-            let found = pullFrom(g.footballQueue, it => it[0]);
+          if (g.catThemeKey) {
+            const ct = CATEGORY_THEMES[g.catThemeKey];
+            const cat = g.currentLot ? g.currentLot.cat : ct.cats[g.catIdx];
+            let found = pullFrom(g.catQueue, it => it[0]);
             if (!found) {
-              const combined = (FOOTBALL.pool[cat]||[]).concat(FOOTBALL.icons[cat]||[]);
+              const combined = (ct.pool[cat]||[]).concat(ct.icons ? (ct.icons[cat]||[]) : []);
               const match = combined.find(it => it[0].toLowerCase().includes(lower));
               if (match) found = match.slice();
             }
             if (!found) return { status: 400, error: `No match for "${arg}" in category ${cat}` };
             if (g.currentLot) g.currentLot = { name: found[0], r: found[1], cat };
-            else { g.footballQueue = g.footballQueue || []; g.footballQueue.unshift(found); }
+            else { g.catQueue = g.catQueue || []; g.catQueue.unshift(found); }
           } else {
             let found = pullFrom(g.itemPool, it => it.name);
             if (!found) return { status: 400, error: `No match for "${arg}"` };

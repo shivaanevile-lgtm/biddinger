@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no">
-<title>Build Your Best ___</title>
+<title>Dr4fter</title>
 <style>
   :root{
     --cream:#F5EFE3;
@@ -34,7 +34,7 @@
 
   .masthead{ text-align:center; margin-bottom:18px; padding-bottom:14px; border-bottom:3px double var(--ink); }
   .masthead h1{ font-size:30px; margin:0 0 2px; letter-spacing:.2px; }
-  .masthead .blank{ border-bottom:2px solid var(--rust); padding:0 6px; }
+  .masthead .four{ color:var(--rust); }
   .masthead p{ margin:4px 0 0; color:var(--ink-soft); font-size:13px; }
 
   .card{ background:#fffdf8; border:1px solid var(--line); border-radius:10px; padding:14px; margin-bottom:12px; box-shadow:0 1px 0 rgba(0,0,0,.03); }
@@ -156,11 +156,8 @@
   .debug-cmd-row button{ background:var(--rust); color:#fff; border:none; border-radius:6px; padding:8px 14px; font-family:'Helvetica Neue',sans-serif; font-weight:700; font-size:12px; }
   .debug-entry{ border-bottom:1px solid #333; padding:6px 0; }
   .debug-entry .ts{ color:#777; }
-  .link-like{ color:var(--rust); text-decoration:underline; cursor:pointer; }
   .center{ text-align:center; }
   .hidden{ display:none !important; }
-  .role-tag{ display:inline-block; font-size:10px; background:var(--green); color:#fff; padding:1px 6px; border-radius:4px; margin-left:4px; vertical-align:middle; }
-  .icon-tag{ background:var(--gold); }
 
   /* Player cards (draft + results) — stacked, gradient budget meter */
   .player-card{ background:#fffdf8; border:1px solid var(--line); border-radius:12px; padding:14px 16px; margin-bottom:10px; transition:border-color .2s; }
@@ -191,7 +188,7 @@
 <div id="app">
 
   <div class="masthead">
-    <h1>Build Your <span class="blank">Best</span> ___</h1>
+    <h1>Dr<span class="four">4</span>fter</h1>
     <p>a live auction party game</p>
   </div>
 
@@ -202,8 +199,11 @@
       <button class="btn btn-primary" id="btn-start-rematch">Start Rematch</button>
       <button class="btn btn-ghost" id="btn-cancel-rematch">cancel rematch</button>
     </div>
-    <div class="section-label">choose a theme</div>
+    <div class="section-label">choose a theme &mdash; pick any 5</div>
     <div class="theme-grid" id="theme-grid"></div>
+
+    <div class="section-label">or a position draft &mdash; one from each category</div>
+    <div class="theme-grid" id="theme-grid-cat"></div>
 
     <div class="card" id="custom-theme-card">
       <div style="font-weight:700; margin-bottom:8px;">✏️ Or type your own</div>
@@ -265,7 +265,7 @@
         <div class="name" id="lot-name">—</div>
         <div class="stars" id="lot-stars"></div>
       </div>
-      <div class="bid-display" id="bid-display">$0<span class="by" id="bid-by"></span></div>
+      <div class="bid-display" id="bid-display">$0</div>
       <div class="ticker" id="ticker"></div>
 
       <div id="bid-controls">
@@ -299,18 +299,18 @@
     </div>
   </div>
 
-  <div class="footer-note" id="footer-debug-trigger">Build Your Best ___ · offline judge, no AI API required</div>
+  <div class="footer-note" id="footer-debug-trigger">Dr4fter · offline judge, no AI API required</div>
 
   <div id="debug-panel" class="hidden">
     <div class="debug-panel-head">
-      <b>Debug Log</b>
+      <b>Console</b>
       <div>
         <button id="btn-debug-copy">Copy</button>
         <button id="btn-debug-clear">Clear</button>
         <button id="btn-debug-close">✕</button>
       </div>
     </div>
-    <div id="debug-log-content">No errors caught yet.</div>
+    <div id="debug-log-content">Type a command below.</div>
     <div class="debug-cmd-row">
       <input type="text" id="debug-cmd-input" placeholder="money 100 / money+ 5 / next Haaland">
       <button id="btn-debug-run">Run</button>
@@ -321,8 +321,8 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script>
 /* ============ ON-PAGE DEBUG CONSOLE ============ */
-/* Tap the footer text 5x to open. Catches errors the alert()s elsewhere in
-   this file don't cover — anything that throws outside a try/catch. */
+/* Tap the footer text (or the lot category label mid-game) 5x to open.
+   Command input only — money / money+ / next / state / help. */
 window.__debugLog = [];
 function debugLog(msg){
   const ts = new Date().toLocaleTimeString();
@@ -330,16 +330,9 @@ function debugLog(msg){
   if(window.__debugLog.length>200) window.__debugLog.shift();
   const content = document.getElementById('debug-log-content');
   if(content){
-    content.innerHTML = window.__debugLog.map(e=>`<div class="debug-entry"><span class="ts">${e.ts}</span> ${e.msg.replace(/[<>]/g,c=>c==='<'?'&lt;':'&gt;')}</div>`).join('') || 'No errors caught yet.';
+    content.innerHTML = window.__debugLog.map(e=>`<div class="debug-entry"><span class="ts">${e.ts}</span> ${e.msg.replace(/[<>]/g,c=>c==='<'?'&lt;':'&gt;')}</div>`).join('') || 'Type a command below.';
   }
 }
-window.addEventListener('error', (e)=>{
-  debugLog(`JS Error: ${e.message} (${(e.filename||'').split('/').pop()}:${e.lineno})`);
-});
-window.addEventListener('unhandledrejection', (e)=>{
-  const reason = e.reason && (e.reason.message || e.reason.toString ? e.reason.toString() : e.reason);
-  debugLog(`Unhandled promise rejection: ${reason}`);
-});
 
 /* ============ DATA ============ */
 const THEMES = {
@@ -501,11 +494,14 @@ const MOVIE_REQUIRED = {GENRE:1,DIRECTOR:1,ACTOR:2,SETTING:1};
 // icons:null means no rare/legendary sub-pool for that theme (football only, for now).
 const CATEGORY_THEMES = {
  football:{name:'5-a-Side Draft', emoji:'⚽', cats:FOOTBALL_CATS, required:FOOTBALL_REQUIRED, pool:FOOTBALL.pool, icons:FOOTBALL.icons,
-   catLabel:{GK:'⚽ Goalkeeper',DEF:'⚽ Defender',MID:'⚽ Midfielder',ATT:'⚽ Attacker'}, resultView:'pitch'},
+   catLabel:{GK:'⚽ Goalkeeper',DEF:'⚽ Defender',MID:'⚽ Midfielder',ATT:'⚽ Attacker'},
+   catShort:{GK:'GK',DEF:'DEF',MID:'MID',ATT:'ATT'}, resultView:'pitch'},
  sandwich:{name:'Build A Sandwich', emoji:'🥪', cats:SANDWICH_CATS, required:SANDWICH_REQUIRED, pool:SANDWICH.pool, icons:null,
-   catLabel:{BREAD:'🍞 Bread',MEAT:'🥩 Meat',CHEESE:'🧀 Cheese',CONDIMENT:'🫙 Condiment',TOPPING:'🥬 Topping'}, resultView:'list'},
+   catLabel:{BREAD:'🍞 Bread',MEAT:'🥩 Meat',CHEESE:'🧀 Cheese',CONDIMENT:'🫙 Condiment',TOPPING:'🥬 Topping'},
+   catShort:{BREAD:'Bread',MEAT:'Meat',CHEESE:'Cheese',CONDIMENT:'Condiment',TOPPING:'Topping'}, resultView:'list'},
  movie:{name:'Build Your Perfect Movie', emoji:'🎬', cats:MOVIE_CATS, required:MOVIE_REQUIRED, pool:MOVIE.pool, icons:null,
-   catLabel:{GENRE:'🎭 Genre',DIRECTOR:'🎥 Director',ACTOR:'⭐ Actor',SETTING:'🌍 Setting'}, resultView:'list'}
+   catLabel:{GENRE:'🎭 Genre',DIRECTOR:'🎥 Director',ACTOR:'⭐ Actor',SETTING:'🌍 Setting'},
+   catShort:{GENRE:'Genre',DIRECTOR:'Director',ACTOR:'Actor',SETTING:'Setting'}, resultView:'list'}
 };
 
 /* ============ UTILS ============ */
@@ -514,7 +510,6 @@ const rnd = (a,b) => Math.floor(Math.random()*(b-a+1))+a;
 const pick = arr => arr[Math.floor(Math.random()*arr.length)];
 function shuffle(arr){ const a=arr.slice(); for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a; }
 function stars(r){ const full=Math.round(r/2); return '★'.repeat(full)+'☆'.repeat(5-full)+' ('+r+'/10)'; }
-function roomCodeGen(){ const chars='ABCDEFGHJKMNPQRSTUVWXYZ23456789'; let s=''; for(let i=0;i<5;i++) s+=chars[rnd(0,chars.length-1)]; return s; }
 function escapeHtml(s){ return String(s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
 /* ============ SOUND (Web Audio, synthesized) ============ */
@@ -570,34 +565,28 @@ const App = {
   hostMode: null,      // '2p' | '3p'  (online)
   role: null,          // 'creator' | 'joiner' | 'host' (online)
   nickname: '',
-  themeKey: null,       // key into THEMES, or 'football', or 'custom'
+  themeKey: null,       // key into THEMES or CATEGORY_THEMES, or 'custom'
   customTheme: null,    // {name, items:[[name,rating],...]}
   roomCode: null,
   pollTimer: null,
-  lastRoomVersion: null,
-  practice: null,       // practice session object
-  pendingJoinAfterNick: null
+  practice: null        // practice session object
 };
 
 /* ============ HOME SCREEN: theme grid ============ */
 function renderThemeGrid(){
-  const grid = $('theme-grid');
-  grid.innerHTML='';
-  const entries = Object.entries(THEMES);
-  entries.forEach(([key,t])=>{
-    const chip = document.createElement('div');
-    chip.className='theme-chip'; chip.dataset.key=key;
-    chip.innerHTML = `<span class="emoji">${t.emoji}</span><span class="name">${t.name}</span>`;
-    chip.onclick = ()=>selectTheme(key);
-    grid.appendChild(chip);
-  });
-  Object.entries(CATEGORY_THEMES).forEach(([key,t])=>{
-    const chip = document.createElement('div');
-    chip.className='theme-chip'; chip.dataset.key=key;
-    chip.innerHTML = `<span class="emoji">${t.emoji}</span><span class="name">${t.name}</span>`;
-    chip.onclick = ()=>selectTheme(key);
-    grid.appendChild(chip);
-  });
+  const fill = (gridId, entries) => {
+    const grid = $(gridId);
+    grid.innerHTML='';
+    entries.forEach(([key,t])=>{
+      const chip = document.createElement('div');
+      chip.className='theme-chip'; chip.dataset.key=key;
+      chip.innerHTML = `<span class="emoji">${t.emoji}</span><span class="name">${escapeHtml(t.name)}</span>`;
+      chip.onclick = ()=>selectTheme(key);
+      grid.appendChild(chip);
+    });
+  };
+  fill('theme-grid', Object.entries(THEMES));
+  fill('theme-grid-cat', Object.entries(CATEGORY_THEMES));
 }
 function selectTheme(key){
   App.themeKey = key; App.customTheme = null;
@@ -748,10 +737,8 @@ async function pollRoom(){
   }catch(e){ /* transient network hiccup, ignore */ }
   finally{ App.pollInFlight = false; }
 }
-// A slow connection can make an older request's response arrive after a
-// newer one's — without this guard, a stale "state" fetch from just before
-// your action can silently paint the screen back to how it looked before you
-// acted, making it look like nothing happened (so you tap again for real).
+// Responses can arrive out of order on a slow connection. Tag each request
+// when it's sent and never let an older response overwrite a newer one.
 function applyRoomIfNewest(seq, room){
   if(seq < App.lastRenderedSeq) return;
   App.lastRenderedSeq = seq;
@@ -806,7 +793,6 @@ $('btn-copy-code').onclick = async ()=>{
 /* ============ ROOM STATE RENDER DISPATCH ============ */
 function renderRoomState(room){
   if(!room) return;
-  App.roomState = room;
   if(room.phase==='lobby'){ enterLobby(room); return; }
   if(room.phase==='drafting'){ showScreen('screen-draft'); renderOnlineDraft(room); return; }
   if(room.phase==='results'){ showScreen('screen-results'); renderResultsFromRoom(room); return; }
@@ -817,8 +803,7 @@ function startPracticeGame(){
   const theme = currentThemeObj();
   const catKey = theme.categoryTheme || null;
   const P = {
-    catThemeKey: catKey,       // null | 'football' | 'sandwich' | 'movie'
-    isFootball: catKey==='football', // kept for the SVG-pitch results-screen check
+    catThemeKey: catKey,       // null (flat theme) or a CATEGORY_THEMES key
     themeName: theme.name, themeEmoji: theme.emoji,
     players: [
       {nick:'You', budget:20, items:[], human:true},
@@ -1007,12 +992,19 @@ function humanRaise(amount){
     resolveLotWinner(P, 0, amount);
   }
 }
+// Both declined with no bid. If neither can afford the $1 minimum, passing is
+// forced rather than chosen — leaving the lot unsold would repeat every round
+// until the pool emptied and players finished under the 5-item cap.
+function resolveForcedPass(P, turnIdx){
+  if(P.players.every(p=>p.budget<1)) return resolveLotWinner(P, turnIdx, 0);
+  return unsoldLot(P);
+}
 function humanPass(){
   const P = App.practice;
   if(P.mode!=='contested') return;
   if(P.currentBidder===null){
     P.passStreak = (P.passStreak||0)+1;
-    if(P.passStreak>=2){ return unsoldLot(P); }
+    if(P.passStreak>=2){ return resolveForcedPass(P, 0); }
     P.turn = 1;
     renderPracticeDraft();
     setTimeout(aiTakeTurn, 500);
@@ -1102,7 +1094,7 @@ function aiPass(){
   const P = App.practice;
   if(P.currentBidder===null){
     P.passStreak = (P.passStreak||0)+1;
-    if(P.passStreak>=2){ return unsoldLot(P); }
+    if(P.passStreak>=2){ return resolveForcedPass(P, 1); }
     P.turn = 0;
     renderPracticeDraft();
   } else {
@@ -1111,14 +1103,14 @@ function aiPass(){
 }
 function finishPractice(){
   const P = App.practice;
-  showResultsScreen(P.players, P, App.themeKey==='football');
+  showResultsScreen(P.players, P);
 }
 
 /* ============ PRACTICE DRAFT RENDER ============ */
 function renderPracticeDraft(){
   const P = App.practice;
   if(!P || !P.currentLot){ return; }
-  renderStalls(P.players, P.mode==='contested'?P.currentBidder:(P.mode==='solo'?P.soloPlayer:null), P.mode==='contested'?P.turn:null);
+  renderStalls(P.players, P.mode==='contested'?P.currentBidder:(P.mode==='solo'?P.soloPlayer:null), P.mode==='contested'?P.turn:null, P.catThemeKey);
 
   $('lot-cat').textContent = P.currentLot.cat ? roleLabel(P.catThemeKey, P.currentLot.cat) : P.themeEmoji+' '+P.themeName;
   $('lot-name').textContent = P.currentLot.name;
@@ -1198,12 +1190,17 @@ function roleLabel(catThemeKey, cat){
   const ct = CATEGORY_THEMES[catThemeKey];
   return (ct && ct.catLabel[cat]) || cat;
 }
+// Compact label for item lists — falls back to the raw key if unknown.
+function catShortLabel(catThemeKey, cat){
+  const ct = CATEGORY_THEMES[catThemeKey];
+  return (ct && ct.catShort && ct.catShort[cat]) || cat;
+}
 function playerCardHTML(nick, budget, items, opts){
   opts = opts||{};
   const pct = Math.max(0, Math.min(100, (budget/20)*100));
   const dot = opts.turnActive ? '<span class="turn-dot"></span>' : '';
   const rows = items.length
-    ? items.map(it=>`<div class="item-row"><span class="iname">${it.cat?`<b>${escapeHtml(it.cat)}:</b> `:''}${escapeHtml((it.name||'').split(',')[0])}</span><span class="iprice">${it.paid===0?'FREE':(it.paid!=null?'$'+it.paid:'')}</span></div>`).join('')
+    ? items.map(it=>`<div class="item-row"><span class="iname">${it.cat?`<b>${escapeHtml(catShortLabel(opts.catThemeKey, it.cat))}:</b> `:''}${escapeHtml(it.name||'')}</span><span class="iprice">${it.paid===0?'FREE':(it.paid!=null?'$'+it.paid:'')}</span></div>`).join('')
     : `<div class="empty-note">Nothing yet</div>`;
   return `<div class="player-card${opts.leading?' leading':''}">
     <div class="prow"><span class="pname">${dot}${escapeHtml(nick)}</span><span class="pbudget mono">$${budget}</span></div>
@@ -1212,10 +1209,10 @@ function playerCardHTML(nick, budget, items, opts){
     ${rows}
   </div>`;
 }
-function renderStalls(players, leadingIdx, turnIdx){
+function renderStalls(players, leadingIdx, turnIdx, catThemeKey){
   const row = $('stall-row'); row.innerHTML='';
   players.forEach((p,i)=>{
-    row.innerHTML += playerCardHTML(p.nick, p.budget, p.items, {leading: leadingIdx===i, turnActive: turnIdx===i});
+    row.innerHTML += playerCardHTML(p.nick, p.budget, p.items, {leading: leadingIdx===i, turnActive: turnIdx===i, catThemeKey});
   });
 }
 
@@ -1244,7 +1241,7 @@ function renderOnlineDraft(room){
   }
 
   renderStalls(bidders.map(p=>({nick:p.nickname, budget:p.budget, items:p.items})),
-    g.currentBidderIdx, g.mode==='contested'?g.turnIdx:null);
+    g.currentBidderIdx, g.mode==='contested'?g.turnIdx:null, room.theme.key);
 
   const amHost = room.players.find(p=>p.nickname===App.nickname && p.role==='host');
   $('host-watch-note').classList.toggle('hidden', !amHost);
@@ -1304,27 +1301,20 @@ function renderOnlineDraft(room){
   }
 }
 async function onlineAction(type, payload){
-  // Guards against a mobile "ghost click" — a single tap occasionally fires
-  // two click events, and the second one arrives after the turn has already
-  // moved on, so it gets correctly rejected even though the first succeeded.
-  // That looked like "it says not your turn but it still works" — both were
-  // true, just from two separate requests off one tap.
+  // One tap can fire two click events on mobile; the duplicate would land
+  // after the turn moved on and be rejected. Only allow one in flight.
   if(App.onlineActionInFlight) return;
   App.onlineActionInFlight = true;
   sndClick();
   try{
-    // The server already hands back the fresh room in its response — render
-    // that directly instead of firing a whole separate "state" fetch for
-    // data we already have. That redundant round-trip was adding real,
-    // avoidable latency to every single action.
+    // The server returns the fresh room in its response — render that
+    // directly rather than firing a second "state" fetch for data we have.
     const seq = ++App.pollSeq;
     const data = await api(type, Object.assign({nickname: App.nickname}, payload||{}));
     applyRoomIfNewest(seq, data.room);
   } catch(e){
-    debugLog(`onlineAction("${type}") rejected: ${e.message}`);
-    // A stale-write conflict resolves itself silently on the next poll — but
-    // anything else (wrong turn, invalid amount, etc.) needs to be visible,
-    // otherwise tapping Raise/Pass just does nothing with no explanation.
+    // Write conflicts resolve themselves on the next poll; surface anything
+    // else so a tap never silently does nothing.
     if(!/room changed|conflict/i.test(e.message)){
       alert(`Action failed: ${e.message}`);
     }
@@ -1382,12 +1372,13 @@ function buildJudgmentParagraph(nicks, itemsArr, budgets, bidLog, j){
 }
 
 /* ============ RESULTS: PRACTICE ============ */
-function showResultsScreen(players, P, isFootball){
+function showResultsScreen(players, P){
   const itemsArr = players.map(p=>p.items);
   const nicks = players.map(p=>p.nick);
   const budgets = players.map(p=>p.budget);
-  renderResults(itemsArr, nicks, budgets, P.bidLog, isFootball, {
+  renderResults(itemsArr, nicks, budgets, P.bidLog, resultViewFor(P.catThemeKey), {
     themeLabel: (P.themeEmoji||'')+' '+P.themeName,
+    catThemeKey: P.catThemeKey,
     onRematch: ()=>{ showScreen('screen-draft'); startPracticeGame(); }
   });
 }
@@ -1398,17 +1389,23 @@ function renderResultsFromRoom(room){
   const itemsArr = bidders.map(p=>p.items);
   const nicks = bidders.map(p=>p.nickname);
   const budgets = bidders.map(p=>p.budget);
-  const isFootball = room.theme.key==='football';
   const amHostOrCreator = room.players.find(p=>p.nickname===App.nickname && (p.role==='host'||p.role==='creator'));
-  renderResults(itemsArr, nicks, budgets, room.game.bidLog||[], isFootball, {
+  renderResults(itemsArr, nicks, budgets, room.game.bidLog||[], resultViewFor(room.theme.key), {
     themeLabel: (room.theme.emoji||'🎯')+' '+room.theme.name,
+    catThemeKey: room.theme.key,
     canRematch: !!amHostOrCreator,
     onRematch: goRematchThemePick
   });
 }
 
 /* ============ SHARED RESULTS RENDER ============ */
-function renderResults(itemsArr, nicks, budgets, bidLog, isFootball, opts){
+// Which extra visual a theme gets on the results screen ('pitch' for the
+// 5-a-side SVG formation, 'list' for everything else).
+function resultViewFor(themeKey){
+  const ct = CATEGORY_THEMES[themeKey];
+  return (ct && ct.resultView) || 'list';
+}
+function renderResults(itemsArr, nicks, budgets, bidLog, resultView, opts){
   showScreen('screen-results');
   const j = judgeGame(itemsArr);
   $('results-title').textContent = opts.themeLabel;
@@ -1417,9 +1414,9 @@ function renderResults(itemsArr, nicks, budgets, bidLog, isFootball, opts){
   const picksWrap = $('picks-wrap'); picksWrap.innerHTML='';
   $('pitches-wrap').innerHTML='';
   nicks.forEach((n,i)=>{
-    picksWrap.innerHTML += playerCardHTML(n, budgets[i], itemsArr[i], {leading: j.winner===i});
+    picksWrap.innerHTML += playerCardHTML(n, budgets[i], itemsArr[i], {leading: j.winner===i, catThemeKey: opts.catThemeKey});
   });
-  if(isFootball){
+  if(resultView==='pitch'){
     const pitchWrap = document.createElement('div'); pitchWrap.className='pitch-wrap';
     itemsArr.forEach((items,i)=>{
       const col = document.createElement('div'); col.className='pitch-col';
@@ -1477,12 +1474,12 @@ $('btn-save-image').onclick = async ()=>{
   try{
     const canvas = await html2canvas($('results-card'), {backgroundColor:'#F5EFE3', scale:2});
     canvas.toBlob(async (blob)=>{
-      const file = new File([blob], 'build-your-best.png', {type:'image/png'});
+      const file = new File([blob], 'dr4fter.png', {type:'image/png'});
       if(navigator.share && navigator.canShare && navigator.canShare({files:[file]})){
-        try{ await navigator.share({files:[file], title:'Build Your Best ___'}); return; }catch(e){}
+        try{ await navigator.share({files:[file], title:'Dr4fter'}); return; }catch(e){}
       }
       const url = URL.createObjectURL(blob);
-      const a = document.createElement('a'); a.href=url; a.download='build-your-best.png';
+      const a = document.createElement('a'); a.href=url; a.download='dr4fter.png';
       document.body.appendChild(a); a.click(); a.remove();
       setTimeout(()=>URL.revokeObjectURL(url), 4000);
     });
@@ -1529,15 +1526,15 @@ function wireSecretTapTrigger(id, requiredTaps){
     taps++;
     clearTimeout(tapTimer);
     tapTimer = setTimeout(()=>{ taps = 0; }, 1500);
-    if(taps>=requiredTaps){ taps = 0; debugLog('— debug panel opened —'); $('debug-panel').classList.remove('hidden'); }
+    if(taps>=requiredTaps){ taps = 0; $('debug-panel').classList.remove('hidden'); }
   });
 }
 wireSecretTapTrigger('footer-debug-trigger', 5);
 wireSecretTapTrigger('lot-cat', 5);
 $('btn-debug-close').onclick = ()=> $('debug-panel').classList.add('hidden');
-$('btn-debug-clear').onclick = ()=>{ window.__debugLog = []; debugLog('— log cleared —'); };
+$('btn-debug-clear').onclick = ()=>{ window.__debugLog = []; debugLog('Cleared.'); };
 $('btn-debug-copy').onclick = async ()=>{
-  const text = window.__debugLog.map(e=>`[${e.ts}] ${e.msg}`).join('\n') || 'No errors caught yet.';
+  const text = window.__debugLog.map(e=>`[${e.ts}] ${e.msg}`).join('\n') || '(empty)';
   try{ await navigator.clipboard.writeText(text); $('btn-debug-copy').textContent = 'Copied!'; }
   catch(e){ $('btn-debug-copy').textContent = 'Copy failed'; }
   setTimeout(()=>{ $('btn-debug-copy').textContent = 'Copy'; }, 1400);

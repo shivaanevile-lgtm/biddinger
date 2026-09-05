@@ -167,4 +167,28 @@ const CATEGORY_THEMES = {
    catShort:{GENRE:'Genre',DIRECTOR:'Director',ACTOR:'Actor',SETTING:'Setting'}, resultView:'list'}
 };
 
-module.exports = { THEMES, FOOTBALL, FOOTBALL_CATS, FOOTBALL_REQUIRED, SANDWICH, SANDWICH_CATS, SANDWICH_REQUIRED, MOVIE, MOVIE_CATS, MOVIE_REQUIRED, CATEGORY_THEMES };
+/* Stable numeric IDs. Assigned once in a fixed traversal order so the client
+   and the server always agree on which number means which item. */
+const ITEM_BY_ID = {};
+const ID_BY_NAME = {};
+(function assignItemIds(){
+  let n = 0;
+  const add = (name, r, themeKey, cat) => {
+    n++;
+    ITEM_BY_ID[n] = { id:n, name, r, themeKey, cat };
+    ID_BY_NAME[name] = n;
+  };
+  Object.keys(THEMES).forEach(k => THEMES[k].items.forEach(it => add(it[0], it[1], k, null)));
+  Object.keys(CATEGORY_THEMES).forEach(k => {
+    const t = CATEGORY_THEMES[k];
+    t.cats.forEach(c => {
+      (t.pool[c]||[]).forEach(it => add(it[0], it[1], k, c));
+      if (t.icons && t.icons[c]) t.icons[c].forEach(it => add(it[0], it[1], k, c));
+    });
+  });
+})();
+function itemIdFor(name){ return ID_BY_NAME[name]; }
+function itemById(id){ return ITEM_BY_ID[parseInt(id,10)]; }
+/* END GAME DATA */
+
+module.exports = { THEMES, FOOTBALL, FOOTBALL_CATS, FOOTBALL_REQUIRED, SANDWICH, SANDWICH_CATS, SANDWICH_REQUIRED, MOVIE, MOVIE_CATS, MOVIE_REQUIRED, CATEGORY_THEMES, ITEM_BY_ID, ID_BY_NAME, itemIdFor, itemById };

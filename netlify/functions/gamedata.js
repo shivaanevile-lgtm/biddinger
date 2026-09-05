@@ -1,4 +1,3 @@
-/* ============ DATA ============ */
 const THEMES = {
 backyard:{emoji:'🏡',name:'Backyard',items:[
  ['In-ground swimming pool',9],['Full outdoor kitchen with built-in grill',8],['Fire pit with stone seating',7],
@@ -117,4 +116,52 @@ const FOOTBALL = {
 const FOOTBALL_CATS = ['GK','DEF','MID','ATT'];
 const FOOTBALL_REQUIRED = {GK:1,DEF:1,MID:2,ATT:1};
 
-module.exports = { THEMES, FOOTBALL, FOOTBALL_CATS, FOOTBALL_REQUIRED };
+const SANDWICH = {
+ pool:{
+  BREAD:[['Sourdough',6],['Brioche bun',7],['Rye',5],['Ciabatta',6],['White sandwich bread',3],['Whole wheat',4],['Pretzel bun',6],['Baguette',6]],
+  MEAT:[['Turkey breast',5],['Roast beef',7],['Fried chicken cutlet',7],['Bacon',8],['Prosciutto',8],['Salami',6],['Pulled pork',7],['Grilled steak',8],['Ham',5],['Meatball',6]],
+  CHEESE:[['Swiss',5],['Cheddar',6],['Pepper jack',6],['Provolone',5],['Mozzarella',5],['Brie',7],['Blue cheese',6],['American',4]],
+  CONDIMENT:[['Mayo',4],['Mustard',4],['Ranch',5],['Sriracha mayo',6],['BBQ sauce',5],['Pesto',6],['Honey mustard',5],['Chipotle aioli',6]],
+  TOPPING:[['Lettuce',3],['Tomato',4],['Red onion',3],['Pickles',4],['Avocado',7],['Caramelized onions',6],['Jalapeños',5],['Arugula',4],['Coleslaw',5],['Fried egg',6]]
+ }
+};
+const SANDWICH_CATS = ['BREAD','MEAT','CHEESE','CONDIMENT','TOPPING'];
+const SANDWICH_REQUIRED = {BREAD:1,MEAT:1,CHEESE:1,CONDIMENT:1,TOPPING:1};
+
+const MOVIE = {
+ pool:{
+  GENRE:[['Sci-fi epic',8],['Romantic comedy',5],['Heist thriller',7],['Slasher horror',6],['High-fantasy adventure',8],
+      ['Buddy-cop comedy',5],['Space opera',8],['Coming-of-age drama',5],['Noir detective mystery',6],
+      ['Superhero origin story',6],['Post-apocalyptic survival',6],['Courtroom drama',5]],
+  DIRECTOR:[['Directed by Christopher Nolan',9],['Directed by Steven Spielberg',9],['Directed by Martin Scorsese',9],
+      ['Directed by Quentin Tarantino',8],['Directed by Denis Villeneuve',8],['Directed by Greta Gerwig',7],
+      ['Directed by Jordan Peele',7],['Directed by Bong Joon-ho',8],['Directed by James Cameron',8],
+      ['Directed by Wes Anderson',7],['Directed by Ridley Scott',7],['Directed by Taika Waititi',6],
+      ['Directed by Ryan Coogler',7],['Directed by Sofia Coppola',6],['Directed by Guillermo del Toro',8]],
+  ACTOR:[['Starring Robert Downey Jr.',9],['Starring George Clooney',8],['Starring Tom Holland',7],
+      ['Starring Meryl Streep',9],['Starring Leonardo DiCaprio',9],['Starring Denzel Washington',9],
+      ['Starring Zendaya',7],['Starring Timothée Chalamet',7],['Starring Margot Robbie',8],['Starring Brad Pitt',8],
+      ['Starring Viola Davis',8],['Starring Tom Hanks',8],['Starring Florence Pugh',7],['Starring Michael B. Jordan',7],
+      ['Starring Cate Blanchett',8],['Starring Ryan Gosling',7],['Starring Emma Stone',8],['Starring Dwayne Johnson',6],
+      ['Starring Anya Taylor-Joy',7],['Starring Idris Elba',7],['Starring Scarlett Johansson',7],
+      ['Starring Jennifer Lawrence',7],['Starring Chris Hemsworth',6],['Starring Awkwafina',6],['Starring Paul Mescal',6]],
+  SETTING:[['Outer space',8],['A haunted mansion',6],['A neon-lit cyberpunk city',8],['A remote desert town',5],['A cruise ship',5],
+      ['Ancient Rome',6],['A post-apocalyptic wasteland',6],['A small snowed-in cabin',5],['Deep underwater',7],
+      ['A bustling 1920s speakeasy',6],['The Wild West',6],['A dystopian megacity',7]]
+ }
+};
+const MOVIE_CATS = ['GENRE','DIRECTOR','ACTOR','SETTING'];
+const MOVIE_REQUIRED = {GENRE:1,DIRECTOR:1,ACTOR:2,SETTING:1};
+
+// Unified registry for every category-based (position-draft-style) theme.
+// icons:null means no rare/legendary sub-pool for that theme (football only, for now).
+const CATEGORY_THEMES = {
+ football:{name:'5-a-Side Draft', emoji:'⚽', cats:FOOTBALL_CATS, required:FOOTBALL_REQUIRED, pool:FOOTBALL.pool, icons:FOOTBALL.icons,
+   catLabel:{GK:'⚽ Goalkeeper',DEF:'⚽ Defender',MID:'⚽ Midfielder',ATT:'⚽ Attacker'}, resultView:'pitch'},
+ sandwich:{name:'Build A Sandwich', emoji:'🥪', cats:SANDWICH_CATS, required:SANDWICH_REQUIRED, pool:SANDWICH.pool, icons:null,
+   catLabel:{BREAD:'🍞 Bread',MEAT:'🥩 Meat',CHEESE:'🧀 Cheese',CONDIMENT:'🫙 Condiment',TOPPING:'🥬 Topping'}, resultView:'list'},
+ movie:{name:'Build Your Perfect Movie', emoji:'🎬', cats:MOVIE_CATS, required:MOVIE_REQUIRED, pool:MOVIE.pool, icons:null,
+   catLabel:{GENRE:'🎭 Genre',DIRECTOR:'🎥 Director',ACTOR:'⭐ Actor',SETTING:'🌍 Setting'}, resultView:'list'}
+};
+
+module.exports = { THEMES, FOOTBALL, FOOTBALL_CATS, FOOTBALL_REQUIRED, SANDWICH, SANDWICH_CATS, SANDWICH_REQUIRED, MOVIE, MOVIE_CATS, MOVIE_REQUIRED, CATEGORY_THEMES };

@@ -460,6 +460,54 @@ const FOOTBALL = {
 const FOOTBALL_CATS = ['GK','DEF','MID','ATT'];
 const FOOTBALL_REQUIRED = {GK:1,DEF:1,MID:2,ATT:1};
 
+const SANDWICH = {
+ pool:{
+  BREAD:[['Sourdough',6],['Brioche bun',7],['Rye',5],['Ciabatta',6],['White sandwich bread',3],['Whole wheat',4],['Pretzel bun',6],['Baguette',6]],
+  MEAT:[['Turkey breast',5],['Roast beef',7],['Fried chicken cutlet',7],['Bacon',8],['Prosciutto',8],['Salami',6],['Pulled pork',7],['Grilled steak',8],['Ham',5],['Meatball',6]],
+  CHEESE:[['Swiss',5],['Cheddar',6],['Pepper jack',6],['Provolone',5],['Mozzarella',5],['Brie',7],['Blue cheese',6],['American',4]],
+  CONDIMENT:[['Mayo',4],['Mustard',4],['Ranch',5],['Sriracha mayo',6],['BBQ sauce',5],['Pesto',6],['Honey mustard',5],['Chipotle aioli',6]],
+  TOPPING:[['Lettuce',3],['Tomato',4],['Red onion',3],['Pickles',4],['Avocado',7],['Caramelized onions',6],['Jalapeños',5],['Arugula',4],['Coleslaw',5],['Fried egg',6]]
+ }
+};
+const SANDWICH_CATS = ['BREAD','MEAT','CHEESE','CONDIMENT','TOPPING'];
+const SANDWICH_REQUIRED = {BREAD:1,MEAT:1,CHEESE:1,CONDIMENT:1,TOPPING:1};
+
+const MOVIE = {
+ pool:{
+  GENRE:[['Sci-fi epic',8],['Romantic comedy',5],['Heist thriller',7],['Slasher horror',6],['High-fantasy adventure',8],
+      ['Buddy-cop comedy',5],['Space opera',8],['Coming-of-age drama',5],['Noir detective mystery',6],
+      ['Superhero origin story',6],['Post-apocalyptic survival',6],['Courtroom drama',5]],
+  DIRECTOR:[['Directed by Christopher Nolan',9],['Directed by Steven Spielberg',9],['Directed by Martin Scorsese',9],
+      ['Directed by Quentin Tarantino',8],['Directed by Denis Villeneuve',8],['Directed by Greta Gerwig',7],
+      ['Directed by Jordan Peele',7],['Directed by Bong Joon-ho',8],['Directed by James Cameron',8],
+      ['Directed by Wes Anderson',7],['Directed by Ridley Scott',7],['Directed by Taika Waititi',6],
+      ['Directed by Ryan Coogler',7],['Directed by Sofia Coppola',6],['Directed by Guillermo del Toro',8]],
+  ACTOR:[['Starring Robert Downey Jr.',9],['Starring George Clooney',8],['Starring Tom Holland',7],
+      ['Starring Meryl Streep',9],['Starring Leonardo DiCaprio',9],['Starring Denzel Washington',9],
+      ['Starring Zendaya',7],['Starring Timothée Chalamet',7],['Starring Margot Robbie',8],['Starring Brad Pitt',8],
+      ['Starring Viola Davis',8],['Starring Tom Hanks',8],['Starring Florence Pugh',7],['Starring Michael B. Jordan',7],
+      ['Starring Cate Blanchett',8],['Starring Ryan Gosling',7],['Starring Emma Stone',8],['Starring Dwayne Johnson',6],
+      ['Starring Anya Taylor-Joy',7],['Starring Idris Elba',7],['Starring Scarlett Johansson',7],
+      ['Starring Jennifer Lawrence',7],['Starring Chris Hemsworth',6],['Starring Awkwafina',6],['Starring Paul Mescal',6]],
+  SETTING:[['Outer space',8],['A haunted mansion',6],['A neon-lit cyberpunk city',8],['A remote desert town',5],['A cruise ship',5],
+      ['Ancient Rome',6],['A post-apocalyptic wasteland',6],['A small snowed-in cabin',5],['Deep underwater',7],
+      ['A bustling 1920s speakeasy',6],['The Wild West',6],['A dystopian megacity',7]]
+ }
+};
+const MOVIE_CATS = ['GENRE','DIRECTOR','ACTOR','SETTING'];
+const MOVIE_REQUIRED = {GENRE:1,DIRECTOR:1,ACTOR:2,SETTING:1};
+
+// Unified registry for every category-based (position-draft-style) theme.
+// icons:null means no rare/legendary sub-pool for that theme (football only, for now).
+const CATEGORY_THEMES = {
+ football:{name:'5-a-Side Draft', emoji:'⚽', cats:FOOTBALL_CATS, required:FOOTBALL_REQUIRED, pool:FOOTBALL.pool, icons:FOOTBALL.icons,
+   catLabel:{GK:'⚽ Goalkeeper',DEF:'⚽ Defender',MID:'⚽ Midfielder',ATT:'⚽ Attacker'}, resultView:'pitch'},
+ sandwich:{name:'Build A Sandwich', emoji:'🥪', cats:SANDWICH_CATS, required:SANDWICH_REQUIRED, pool:SANDWICH.pool, icons:null,
+   catLabel:{BREAD:'🍞 Bread',MEAT:'🥩 Meat',CHEESE:'🧀 Cheese',CONDIMENT:'🫙 Condiment',TOPPING:'🥬 Topping'}, resultView:'list'},
+ movie:{name:'Build Your Perfect Movie', emoji:'🎬', cats:MOVIE_CATS, required:MOVIE_REQUIRED, pool:MOVIE.pool, icons:null,
+   catLabel:{GENRE:'🎭 Genre',DIRECTOR:'🎥 Director',ACTOR:'⭐ Actor',SETTING:'🌍 Setting'}, resultView:'list'}
+};
+
 /* ============ UTILS ============ */
 const $ = id => document.getElementById(id);
 const rnd = (a,b) => Math.floor(Math.random()*(b-a+1))+a;
@@ -543,11 +591,13 @@ function renderThemeGrid(){
     chip.onclick = ()=>selectTheme(key);
     grid.appendChild(chip);
   });
-  const fb = document.createElement('div');
-  fb.className='theme-chip'; fb.dataset.key='football';
-  fb.innerHTML = `<span class="emoji">⚽</span><span class="name">5-a-Side Draft</span>`;
-  fb.onclick = ()=>selectTheme('football');
-  grid.appendChild(fb);
+  Object.entries(CATEGORY_THEMES).forEach(([key,t])=>{
+    const chip = document.createElement('div');
+    chip.className='theme-chip'; chip.dataset.key=key;
+    chip.innerHTML = `<span class="emoji">${t.emoji}</span><span class="name">${t.name}</span>`;
+    chip.onclick = ()=>selectTheme(key);
+    grid.appendChild(chip);
+  });
 }
 function selectTheme(key){
   App.themeKey = key; App.customTheme = null;
@@ -577,7 +627,7 @@ function generateCustomItems(raw){
   return items;
 }
 function currentThemeObj(){
-  if(App.themeKey==='football') return {emoji:'⚽', name:'5-a-Side Draft', football:true};
+  if(CATEGORY_THEMES[App.themeKey]){ const t=CATEGORY_THEMES[App.themeKey]; return {emoji:t.emoji, name:t.name, categoryTheme:App.themeKey}; }
   if(App.themeKey==='custom') return {emoji:'✏️', name:App.customTheme.name, items:App.customTheme.items};
   return THEMES[App.themeKey];
 }
@@ -765,8 +815,10 @@ function renderRoomState(room){
 /* ============ PRACTICE MODE ENGINE ============ */
 function startPracticeGame(){
   const theme = currentThemeObj();
+  const catKey = theme.categoryTheme || null;
   const P = {
-    isFootball: !!theme.football,
+    catThemeKey: catKey,       // null | 'football' | 'sandwich' | 'movie'
+    isFootball: catKey==='football', // kept for the SVG-pitch results-screen check
     themeName: theme.name, themeEmoji: theme.emoji,
     players: [
       {nick:'You', budget:20, items:[], human:true},
@@ -783,11 +835,12 @@ function startPracticeGame(){
     mode: 'idle',         // 'contested' | 'solo'
     soloPlayer: null,
     itemPool: null,       // for flat themes: shuffled remaining items [name,r]
-    footballCatIdx: 0,
-    footballCandidates: null // for current category: array of [name,r]
+    catIdx: 0,
+    candidates: null      // for current category: array of [name,r]
   };
-  if(P.isFootball){
-    P.footballCandidates = buildFootballCandidateQueue(FOOTBALL_CATS[0]);
+  if(catKey){
+    const ct = CATEGORY_THEMES[catKey];
+    P.candidates = buildCategoryCandidateQueue(catKey, ct.cats[0]);
   } else {
     P.itemPool = shuffle(theme.items.slice());
   }
@@ -797,43 +850,40 @@ function startPracticeGame(){
   drawNextLotPractice();
 }
 
-function buildFootballCandidateQueue(cat){
-  const iconsAll = shuffle(FOOTBALL.icons[cat].slice());
+function buildCategoryCandidateQueue(catThemeKey, cat){
+  const ct = CATEGORY_THEMES[catThemeKey];
+  const poolShuffled = shuffle(ct.pool[cat].slice());
+  if(!ct.icons){ return poolShuffled; }
+  const iconsAll = shuffle(ct.icons[cat].slice());
   const icons3 = iconsAll.slice(0,3);
   const leadIcon = icons3[0];
   const restIcons = icons3.slice(1);
-  const poolShuffled = shuffle(FOOTBALL.pool[cat].slice());
   const rest = shuffle(restIcons.concat(poolShuffled));
   return [leadIcon].concat(rest);
 }
 
 function playerNeedsFlat(p){ return p.items.length < 5; }
-function playerNeedsCat(p, cat){ return p.items.filter(it=>it.cat===cat).length < FOOTBALL_REQUIRED[cat]; }
+function playerNeedsCat(p, cat, requiredMap){ return p.items.filter(it=>it.cat===cat).length < requiredMap[cat]; }
 
 function drawNextLotPractice(){
   const P = App.practice;
-  // check end of game
-  if(P.isFootball){
-    if(P.footballCatIdx >= FOOTBALL_CATS.length){ return finishPractice(); }
-  } else {
-    if(P.players.every(p=>p.items.length>=5)){ return finishPractice(); }
-  }
-
-  if(P.isFootball){
-    let cat = FOOTBALL_CATS[P.footballCatIdx];
-    while(!P.players[0] && false){} // no-op guard
+  if(P.catThemeKey){
+    const ct = CATEGORY_THEMES[P.catThemeKey];
+    // check end of game
+    if(P.catIdx >= ct.cats.length){ return finishPractice(); }
+    let cat = ct.cats[P.catIdx];
     // advance category if fully satisfied
-    while(P.footballCatIdx < FOOTBALL_CATS.length && !P.players.some(p=>playerNeedsCat(p,cat))){
-      P.footballCatIdx++;
-      if(P.footballCatIdx>=FOOTBALL_CATS.length){ return finishPractice(); }
-      cat = FOOTBALL_CATS[P.footballCatIdx];
-      P.footballCandidates = buildFootballCandidateQueue(cat);
+    while(P.catIdx < ct.cats.length && !P.players.some(p=>playerNeedsCat(p,cat,ct.required))){
+      P.catIdx++;
+      if(P.catIdx>=ct.cats.length){ return finishPractice(); }
+      cat = ct.cats[P.catIdx];
+      P.candidates = buildCategoryCandidateQueue(P.catThemeKey, cat);
       P.skipsUsed = 0;
     }
-    const wanting = [0,1].filter(i=>playerNeedsCat(P.players[i],cat));
-    const cand = drawFootballCandidate(P, cat);
+    const wanting = [0,1].filter(i=>playerNeedsCat(P.players[i],cat,ct.required));
+    const cand = drawCategoryCandidate(P, cat);
     if(!cand){ // ran out of candidates edge case; refill
-      P.footballCandidates = buildFootballCandidateQueue(cat);
+      P.candidates = buildCategoryCandidateQueue(P.catThemeKey, cat);
       return drawNextLotPractice();
     }
     P.currentLot = {name:cand[0], r:cand[1], cat:cat};
@@ -843,6 +893,7 @@ function drawNextLotPractice(){
       startSoloLot(P, wanting[0]);
     }
   } else {
+    if(P.players.every(p=>p.items.length>=5)){ return finishPractice(); }
     const wanting = [0,1].filter(i=>playerNeedsFlat(P.players[i]));
     if(wanting.length===0) return finishPractice();
     const next = P.itemPool.shift();
@@ -873,9 +924,9 @@ function aiSoloClaim(){
   const amount = ai.budget===0 ? 0 : 1;
   resolveLotWinner(P, 1, amount);
 }
-function drawFootballCandidate(P, cat){
-  if(!P.footballCandidates || !P.footballCandidates.length) return null;
-  return P.footballCandidates.shift();
+function drawCategoryCandidate(P, cat){
+  if(!P.candidates || !P.candidates.length) return null;
+  return P.candidates.shift();
 }
 
 function startContestedLot(P){
@@ -973,14 +1024,13 @@ function humanSkip(){
   const P = App.practice;
   if(P.mode!=='solo') return;
   P.skipsUsed++;
-  if(P.skipsUsed>=3){
-    const cand = P.isFootball ? drawFootballCandidate(P, P.currentLot.cat) : P.itemPool.shift();
-    if(cand){ P.currentLot = {name:cand[0], r:cand[1], cat:P.currentLot.cat}; }
+  if(P.skipsUsed>=4){
+    // 4th attempt: auto-given the CURRENT (not a new) candidate
     resolveLotWinner(P, P.soloPlayer, P.players[P.soloPlayer].budget===0?0:1);
     return;
   }
-  const cand = P.isFootball ? drawFootballCandidate(P, P.currentLot.cat) : P.itemPool.shift();
-  if(!cand){ P.skipsUsed=3; return humanSkip(); }
+  const cand = P.catThemeKey ? drawCategoryCandidate(P, P.currentLot.cat) : P.itemPool.shift();
+  if(!cand){ P.skipsUsed=4; return humanSkip(); }
   P.currentLot = {name:cand[0], r:cand[1], cat:P.currentLot.cat};
   renderPracticeDraft();
 }
@@ -1070,7 +1120,7 @@ function renderPracticeDraft(){
   if(!P || !P.currentLot){ return; }
   renderStalls(P.players, P.mode==='contested'?P.currentBidder:(P.mode==='solo'?P.soloPlayer:null), P.mode==='contested'?P.turn:null);
 
-  $('lot-cat').textContent = P.currentLot.cat ? roleLabel(P.currentLot.cat) : P.themeEmoji+' '+P.themeName;
+  $('lot-cat').textContent = P.currentLot.cat ? roleLabel(P.catThemeKey, P.currentLot.cat) : P.themeEmoji+' '+P.themeName;
   $('lot-name').textContent = P.currentLot.name;
   $('lot-stars').textContent = stars(P.currentLot.r);
 
@@ -1144,15 +1194,16 @@ function hideBidControls(){
   $('bid-controls').classList.add('hidden');
 }
 
-function roleLabel(cat){
-  return {GK:'⚽ Goalkeeper',DEF:'⚽ Defender',MID:'⚽ Midfielder',ATT:'⚽ Attacker'}[cat] || cat;
+function roleLabel(catThemeKey, cat){
+  const ct = CATEGORY_THEMES[catThemeKey];
+  return (ct && ct.catLabel[cat]) || cat;
 }
 function playerCardHTML(nick, budget, items, opts){
   opts = opts||{};
   const pct = Math.max(0, Math.min(100, (budget/20)*100));
   const dot = opts.turnActive ? '<span class="turn-dot"></span>' : '';
   const rows = items.length
-    ? items.map(it=>`<div class="item-row"><span class="iname">${escapeHtml((it.name||'').split(',')[0])}</span><span class="iprice">${it.paid===0?'FREE':(it.paid!=null?'$'+it.paid:'')}</span></div>`).join('')
+    ? items.map(it=>`<div class="item-row"><span class="iname">${it.cat?`<b>${escapeHtml(it.cat)}:</b> `:''}${escapeHtml((it.name||'').split(',')[0])}</span><span class="iprice">${it.paid===0?'FREE':(it.paid!=null?'$'+it.paid:'')}</span></div>`).join('')
     : `<div class="empty-note">Nothing yet</div>`;
   return `<div class="player-card${opts.leading?' leading':''}">
     <div class="prow"><span class="pname">${dot}${escapeHtml(nick)}</span><span class="pbudget mono">$${budget}</span></div>
@@ -1204,7 +1255,7 @@ function renderOnlineDraft(room){
     return;
   }
   $('draft-active-area').classList.remove('hidden');
-  $('lot-cat').textContent = g.currentLot.cat ? roleLabel(g.currentLot.cat) : (room.theme.emoji||'🎯')+' '+room.theme.name;
+  $('lot-cat').textContent = g.currentLot.cat ? roleLabel(room.theme.key, g.currentLot.cat) : (room.theme.emoji||'🎯')+' '+room.theme.name;
   $('lot-name').textContent = g.currentLot.name;
   $('lot-stars').textContent = stars(g.currentLot.r);
   $('bid-display').innerHTML = '$'+g.currentBid + (g.currentBidderIdx!==null && g.currentBidderIdx!==undefined ? `<span class="by">— currently held by ${escapeHtml(bidders[g.currentBidderIdx].nickname)}</span>` : '');
@@ -1527,17 +1578,18 @@ function runDebugCommandPractice(cmd, rest){
   } else if(cmd==='next'){
     if(!rest){ debugLog('Usage: next <item name>'); return; }
     const lower = rest.toLowerCase();
-    if(P.isFootball){
-      const cat = P.currentLot ? P.currentLot.cat : FOOTBALL_CATS[P.footballCatIdx];
-      let found = findAndPullPlain(P.footballCandidates, rest);
+    if(P.catThemeKey){
+      const ct = CATEGORY_THEMES[P.catThemeKey];
+      const cat = P.currentLot ? P.currentLot.cat : ct.cats[P.catIdx];
+      let found = findAndPullPlain(P.candidates, rest);
       if(!found){
-        const combined = (FOOTBALL.pool[cat]||[]).concat(FOOTBALL.icons[cat]||[]);
+        const combined = (ct.pool[cat]||[]).concat(ct.icons ? (ct.icons[cat]||[]) : []);
         const match = combined.find(it=>it[0].toLowerCase().includes(lower));
         if(match) found = match.slice();
       }
       if(!found){ debugLog(`No match for "${rest}" in category ${cat}.`); return; }
       if(P.currentLot){ P.currentLot = {name:found[0], r:found[1], cat}; renderPracticeDraft(); debugLog(`Current lot swapped to ${found[0]}.`); }
-      else { P.footballCandidates = P.footballCandidates||[]; P.footballCandidates.unshift(found); debugLog(`${found[0]} will be drawn next.`); }
+      else { P.candidates = P.candidates||[]; P.candidates.unshift(found); debugLog(`${found[0]} will be drawn next.`); }
     } else {
       const idx = (P.itemPool||[]).findIndex(it => it.name.toLowerCase().includes(lower));
       if(idx===-1){ debugLog(`No match for "${rest}" in remaining pool.`); return; }

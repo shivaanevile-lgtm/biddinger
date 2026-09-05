@@ -312,7 +312,7 @@
     </div>
     <div id="debug-log-content">Type a command below.</div>
     <div class="debug-cmd-row">
-      <input type="text" id="debug-cmd-input" placeholder="list · money 100 · next Haaland">
+      <input type="text" id="debug-cmd-input" placeholder="list · next 102 · money 100">
       <button id="btn-debug-run">Run</button>
     </div>
   </div>
@@ -503,6 +503,30 @@ const CATEGORY_THEMES = {
    catLabel:{GENRE:'🎭 Genre',DIRECTOR:'🎥 Director',ACTOR:'⭐ Actor',SETTING:'🌍 Setting'},
    catShort:{GENRE:'Genre',DIRECTOR:'Director',ACTOR:'Actor',SETTING:'Setting'}, resultView:'list'}
 };
+
+/* Stable numeric IDs. Assigned once in a fixed traversal order so the client
+   and the server always agree on which number means which item. */
+const ITEM_BY_ID = {};
+const ID_BY_NAME = {};
+(function assignItemIds(){
+  let n = 0;
+  const add = (name, r, themeKey, cat) => {
+    n++;
+    ITEM_BY_ID[n] = { id:n, name, r, themeKey, cat };
+    ID_BY_NAME[name] = n;
+  };
+  Object.keys(THEMES).forEach(k => THEMES[k].items.forEach(it => add(it[0], it[1], k, null)));
+  Object.keys(CATEGORY_THEMES).forEach(k => {
+    const t = CATEGORY_THEMES[k];
+    t.cats.forEach(c => {
+      (t.pool[c]||[]).forEach(it => add(it[0], it[1], k, c));
+      if (t.icons && t.icons[c]) t.icons[c].forEach(it => add(it[0], it[1], k, c));
+    });
+  });
+})();
+function itemIdFor(name){ return ID_BY_NAME[name]; }
+function itemById(id){ return ITEM_BY_ID[parseInt(id,10)]; }
+/* END GAME DATA */
 
 /* ============ UTILS ============ */
 const $ = id => document.getElementById(id);
@@ -874,7 +898,10 @@ function drawNextLotPractice(){
       P.skipsUsed = 0;
     }
     const wanting = [0,1].filter(i=>playerNeedsCat(P.players[i],cat,ct.required));
-    const cand = drawCategoryCandidate(P, cat);
+    P.pendingNext = P.pendingNext || {};
+    const cand = (P.pendingNext[cat] && P.pendingNext[cat].length)
+      ? P.pendingNext[cat].shift()
+      : drawCategoryCandidate(P, cat);
     if(!cand){ // queue drained — refill without anything already drafted
       P.candidates = buildCategoryCandidateQueue(P.catThemeKey, cat, draftedNamesPractice(P));
       if(!P.candidates.length) return finishPractice(); // category genuinely exhausted
@@ -890,7 +917,8 @@ function drawNextLotPractice(){
     if(P.players.every(p=>p.items.length>=5)){ return finishPractice(); }
     const wanting = [0,1].filter(i=>playerNeedsFlat(P.players[i]));
     if(wanting.length===0) return finishPractice();
-    const next = P.itemPool.shift();
+    P.pendingNext = P.pendingNext || {};
+    const next = (P.pendingNext._ && P.pendingNext._.length) ? P.pendingNext._.shift() : P.itemPool.shift();
     if(!next) return finishPractice();
     P.currentLot = {name:next[0], r:next[1], cat:null};
     if(wanting.length===2){
@@ -1606,12 +1634,13 @@ function listCurrentCategory(){
     header = `${themeName} — ${entries.length} left in the pool`;
   }
 
-  const avail = entries.filter(e=>!draftedSet.has(e[0])).sort((a,b)=>b[1]-a[1]);
-  const taken = entries.filter(e=>draftedSet.has(e[0]));
-  debugLog(header);
+  const withIds = e => ({ id: itemIdFor(e[0]) || 0, name: e[0], r: e[1] });
+  const avail = entries.filter(e=>!draftedSet.has(e[0])).map(withIds).sort((a,b)=>a.id-b.id);
+  const taken = entries.filter(e=>draftedSet.has(e[0])).map(withIds).sort((a,b)=>a.id-b.id);
+  debugLog(header + '  —  use: next <id>');
   if(!avail.length) debugLog('  (nothing available)');
-  else debugLog('  ' + avail.map(e=>`${e[0]} (${e[1]})`).join('\n  '));
-  if(taken.length) debugLog(`  already drafted: ${taken.map(e=>e[0]).join(', ')}`);
+  else debugLog('  ' + avail.map(e=>`${String(e.id).padStart(3,' ')}  ${e.name} (${e.r})`).join('\n  '));
+  if(taken.length) debugLog(`  drafted: ${taken.map(e=>'#'+e.id+' '+e.name).join(', ')}`);
 }
 function findAndPullPlain(pool, nameSubstr){
   if(!pool) return null;
@@ -1629,7 +1658,7 @@ function runDebugCommand(raw){
   const rest = parts.slice(1).join(' ');
   if(cmd==='list' || cmd==='items'){ listCurrentCategory(); return; }
   if(cmd==='help'){
-    debugLog('money <amt> [nickname] · money+ <amt> [nickname] · next <item name> · list · state');
+    debugLog('list · next <id> · money <amt> [nickname] · money+ <amt> [nickname] · state');
     return;
   }
   if(App.mode==='practice') runDebugCommandPractice(cmd, rest);
@@ -1654,27 +1683,35 @@ function runDebugCommandPractice(cmd, rest){
     debugLog(`${target.nick}'s budget is now $${target.budget}.`);
     if(P.currentLot) renderPracticeDraft();
   } else if(cmd==='next'){
-    if(!rest){ debugLog('Usage: next <item name>'); return; }
-    const lower = rest.toLowerCase();
-    if(P.catThemeKey){
-      const ct = CATEGORY_THEMES[P.catThemeKey];
-      const cat = P.currentLot ? P.currentLot.cat : ct.cats[P.catIdx];
-      let found = findAndPullPlain(P.candidates, rest);
-      if(!found){
-        const combined = (ct.pool[cat]||[]).concat(ct.icons ? (ct.icons[cat]||[]) : []);
-        const match = combined.find(it=>it[0].toLowerCase().includes(lower));
-        if(match) found = match.slice();
-      }
-      if(!found){ debugLog(`No match for "${rest}" in category ${cat}.`); return; }
-      if(P.currentLot){ P.currentLot = {name:found[0], r:found[1], cat}; renderPracticeDraft(); debugLog(`Current lot swapped to ${found[0]}.`); }
-      else { P.candidates = P.candidates||[]; P.candidates.unshift(found); debugLog(`${found[0]} will be drawn next.`); }
+    if(!rest){ debugLog('Usage: next <id or item name>'); return; }
+    const themeKey = P.catThemeKey || App.themeKey;
+    const drafted = draftedNamesPractice(P);
+    let resolved = null;
+    if(/^\d+$/.test(rest.trim())){
+      const rec = itemById(rest.trim());
+      if(!rec){ debugLog(`No item with id ${rest.trim()}.`); return; }
+      if(rec.themeKey !== themeKey){ debugLog(`#${rec.id} "${rec.name}" belongs to a different theme.`); return; }
+      resolved = rec;
     } else {
-      const idx = (P.itemPool||[]).findIndex(it => it.name.toLowerCase().includes(lower));
-      if(idx===-1){ debugLog(`No match for "${rest}" in remaining pool.`); return; }
-      const found = P.itemPool.splice(idx,1)[0];
-      if(P.currentLot){ P.currentLot = {name:found.name, r:found.r, cat:null}; renderPracticeDraft(); debugLog(`Current lot swapped to ${found.name}.`); }
-      else { P.itemPool.unshift(found); debugLog(`${found.name} will be drawn next.`); }
+      const lower = rest.toLowerCase();
+      const all = Object.keys(ITEM_BY_ID).map(k=>ITEM_BY_ID[k])
+        .filter(r=>r.themeKey===themeKey && r.name.toLowerCase().includes(lower));
+      if(!all.length){ debugLog(`No match for "${rest}" in this theme.`); return; }
+      resolved = all[0];
     }
+    if(drafted.has(resolved.name)){ debugLog(`"${resolved.name}" is already drafted.`); return; }
+    if(P.currentLot && P.currentLot.name===resolved.name){ debugLog(`"${resolved.name}" is already the current lot.`); return; }
+
+    // queue it — the lot currently being bid on is left alone
+    P.pendingNext = P.pendingNext || {};
+    const key = resolved.cat || '_';
+    P.pendingNext[key] = P.pendingNext[key] || [];
+    if(!P.pendingNext[key].some(it=>it[0]===resolved.name)){
+      P.pendingNext[key].push([resolved.name, resolved.r]);
+      const strip = arr => { if(!arr) return; const i = arr.findIndex(x=>x[0]===resolved.name); if(i>-1) arr.splice(i,1); };
+      strip(P.candidates); strip(P.itemPool);
+    }
+    debugLog(`#${resolved.id} ${resolved.name}${resolved.cat?' ('+resolved.cat+')':''} queued up next.`);
   } else if(cmd==='state'){
     debugLog(`Budget $${P.players[0].budget} · items: ${P.players[0].items.map(i=>i.name).join(', ')||'none'} · current lot: ${P.currentLot?P.currentLot.name:'none'}`);
   } else {
@@ -1692,8 +1729,8 @@ async function runDebugCommandOnline(cmd, rest){
     const seq = ++App.pollSeq;
     const data = await api('debug', {nickname: App.nickname, cmd, arg: rest});
     const bidders = data.room.players.filter(p=>p.role!=='host');
-    debugLog(cmd.startsWith('money')
-      ? bidders.map(p=>`${p.nickname}: $${p.budget}`).join(' · ')
+    debugLog(data.notice ? data.notice
+      : cmd.startsWith('money') ? bidders.map(p=>`${p.nickname}: $${p.budget}`).join(' · ')
       : 'OK.');
     applyRoomIfNewest(seq, data.room);
   }catch(e){

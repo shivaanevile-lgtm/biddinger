@@ -151,6 +151,9 @@
   .debug-panel-head{ display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; color:#fff; font-family:'Helvetica Neue',sans-serif; }
   .debug-panel-head button{ background:#2a2a26; color:#fff; border:1px solid #444; border-radius:6px; padding:5px 9px; font-size:11px; margin-left:6px; }
   #debug-log-content{ white-space:pre-wrap; word-break:break-word; line-height:1.5; }
+  .debug-cmd-row{ display:flex; gap:6px; margin-top:10px; }
+  .debug-cmd-row input{ flex:1; min-width:0; background:#2a2a26; border:1px solid #444; border-radius:6px; color:#8fe08f; font-family:'SF Mono',Menlo,monospace; font-size:12px; padding:8px; }
+  .debug-cmd-row button{ background:var(--rust); color:#fff; border:none; border-radius:6px; padding:8px 14px; font-family:'Helvetica Neue',sans-serif; font-weight:700; font-size:12px; }
   .debug-entry{ border-bottom:1px solid #333; padding:6px 0; }
   .debug-entry .ts{ color:#777; }
   .link-like{ color:var(--rust); text-decoration:underline; cursor:pointer; }
@@ -308,6 +311,10 @@
       </div>
     </div>
     <div id="debug-log-content">No errors caught yet.</div>
+    <div class="debug-cmd-row">
+      <input type="text" id="debug-cmd-input" placeholder="money 100 / money+ 5 / next Haaland">
+      <button id="btn-debug-run">Run</button>
+    </div>
   </div>
 </div>
 
@@ -1441,24 +1448,113 @@ $('btn-use-custom').onclick = useCustomTheme;
 renderThemeGrid();
 updateHomeForRematch();
 
-/* Debug panel wiring — 5 taps on the footer text opens it */
-(function(){
+/* Debug panel wiring — 5 taps on a trigger element opens it.
+   Two triggers: the home-screen footer, and the lot category label on the
+   bidding screen itself (no need to leave the game to open it). */
+function wireSecretTapTrigger(id, requiredTaps){
+  const el = $(id);
+  if(!el) return;
   let taps = 0, tapTimer = null;
-  $('footer-debug-trigger').addEventListener('click', ()=>{
+  el.addEventListener('click', ()=>{
     taps++;
     clearTimeout(tapTimer);
     tapTimer = setTimeout(()=>{ taps = 0; }, 1500);
-    if(taps>=5){ taps = 0; debugLog('— debug panel opened —'); $('debug-panel').classList.remove('hidden'); }
+    if(taps>=requiredTaps){ taps = 0; debugLog('— debug panel opened —'); $('debug-panel').classList.remove('hidden'); }
   });
-  $('btn-debug-close').onclick = ()=> $('debug-panel').classList.add('hidden');
-  $('btn-debug-clear').onclick = ()=>{ window.__debugLog = []; debugLog('— log cleared —'); };
-  $('btn-debug-copy').onclick = async ()=>{
-    const text = window.__debugLog.map(e=>`[${e.ts}] ${e.msg}`).join('\n') || 'No errors caught yet.';
-    try{ await navigator.clipboard.writeText(text); $('btn-debug-copy').textContent = 'Copied!'; }
-    catch(e){ $('btn-debug-copy').textContent = 'Copy failed'; }
-    setTimeout(()=>{ $('btn-debug-copy').textContent = 'Copy'; }, 1400);
-  };
-})();
+}
+wireSecretTapTrigger('footer-debug-trigger', 5);
+wireSecretTapTrigger('lot-cat', 5);
+$('btn-debug-close').onclick = ()=> $('debug-panel').classList.add('hidden');
+$('btn-debug-clear').onclick = ()=>{ window.__debugLog = []; debugLog('— log cleared —'); };
+$('btn-debug-copy').onclick = async ()=>{
+  const text = window.__debugLog.map(e=>`[${e.ts}] ${e.msg}`).join('\n') || 'No errors caught yet.';
+  try{ await navigator.clipboard.writeText(text); $('btn-debug-copy').textContent = 'Copied!'; }
+  catch(e){ $('btn-debug-copy').textContent = 'Copy failed'; }
+  setTimeout(()=>{ $('btn-debug-copy').textContent = 'Copy'; }, 1400);
+};
+
+/* ============ DEBUG CONSOLE COMMANDS ============ */
+function findAndPullPlain(pool, nameSubstr){
+  if(!pool) return null;
+  const lower = nameSubstr.toLowerCase();
+  const idx = pool.findIndex(it => (it[0]||'').toLowerCase().includes(lower));
+  if(idx===-1) return null;
+  return pool.splice(idx,1)[0];
+}
+function runDebugCommand(raw){
+  raw = (raw||'').trim();
+  if(!raw) return;
+  debugLog(`> ${raw}`);
+  const parts = raw.split(/\s+/);
+  const cmd = (parts[0]||'').toLowerCase();
+  const rest = parts.slice(1).join(' ');
+  if(cmd==='help'){
+    debugLog('Commands: money <amt>, money+ <amt>, next <item name>, state');
+    return;
+  }
+  if(App.mode==='practice') runDebugCommandPractice(cmd, rest);
+  else if(App.mode==='online') runDebugCommandOnline(cmd, rest);
+  else debugLog('No active game — start a Practice game or online room first.');
+}
+function runDebugCommandPractice(cmd, rest){
+  const P = App.practice;
+  if(!P){ debugLog('No practice game running.'); return; }
+  if(cmd==='money' || cmd==='money+'){
+    const amt = parseInt(rest,10);
+    if(isNaN(amt)){ debugLog('Usage: money <amount>  (or money+ <amount> to add)'); return; }
+    P.players[0].budget = cmd==='money' ? amt : P.players[0].budget + amt;
+    debugLog(`Your budget is now $${P.players[0].budget}.`);
+    if(P.currentLot) renderPracticeDraft();
+  } else if(cmd==='next'){
+    if(!rest){ debugLog('Usage: next <item name>'); return; }
+    const lower = rest.toLowerCase();
+    if(P.isFootball){
+      const cat = P.currentLot ? P.currentLot.cat : FOOTBALL_CATS[P.footballCatIdx];
+      let found = findAndPullPlain(P.footballCandidates, rest);
+      if(!found){
+        const combined = (FOOTBALL.pool[cat]||[]).concat(FOOTBALL.icons[cat]||[]);
+        const match = combined.find(it=>it[0].toLowerCase().includes(lower));
+        if(match) found = match.slice();
+      }
+      if(!found){ debugLog(`No match for "${rest}" in category ${cat}.`); return; }
+      if(P.currentLot){ P.currentLot = {name:found[0], r:found[1], cat}; renderPracticeDraft(); debugLog(`Current lot swapped to ${found[0]}.`); }
+      else { P.footballCandidates = P.footballCandidates||[]; P.footballCandidates.unshift(found); debugLog(`${found[0]} will be drawn next.`); }
+    } else {
+      const idx = (P.itemPool||[]).findIndex(it => it.name.toLowerCase().includes(lower));
+      if(idx===-1){ debugLog(`No match for "${rest}" in remaining pool.`); return; }
+      const found = P.itemPool.splice(idx,1)[0];
+      if(P.currentLot){ P.currentLot = {name:found.name, r:found.r, cat:null}; renderPracticeDraft(); debugLog(`Current lot swapped to ${found.name}.`); }
+      else { P.itemPool.unshift(found); debugLog(`${found.name} will be drawn next.`); }
+    }
+  } else if(cmd==='state'){
+    debugLog(`Budget $${P.players[0].budget} · items: ${P.players[0].items.map(i=>i.name).join(', ')||'none'} · current lot: ${P.currentLot?P.currentLot.name:'none'}`);
+  } else {
+    debugLog(`Unknown command "${cmd}". Type "help".`);
+  }
+}
+async function runDebugCommandOnline(cmd, rest){
+  if(!['money','money+','next','state'].includes(cmd)){ debugLog(`Unknown command "${cmd}". Type "help".`); return; }
+  if(cmd==='state'){
+    try{ const data = await api('state', {}); debugLog(JSON.stringify(data.room)); }
+    catch(e){ debugLog(`state failed: ${e.message}`); }
+    return;
+  }
+  try{
+    const data = await api('debug', {nickname: App.nickname, cmd, arg: rest});
+    debugLog(`OK.`);
+    renderRoomState(data.room);
+  }catch(e){
+    debugLog(`Command failed: ${e.message}`);
+  }
+}
+$('btn-debug-run').onclick = ()=>{
+  const v = $('debug-cmd-input').value;
+  $('debug-cmd-input').value = '';
+  runDebugCommand(v);
+};
+$('debug-cmd-input').addEventListener('keydown', (e)=>{
+  if(e.key==='Enter'){ e.preventDefault(); $('btn-debug-run').click(); }
+});
 
 </script>
 </body>

@@ -17,6 +17,9 @@
     --gold:#c99a3f;
   }
   *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  /* Without this iOS keeps double-tap-to-zoom on tappable elements and adds a
+     ~300ms delay before click fires — rapid taps zoom instead of registering. */
+  button, .btn, .theme-chip, .pick-row, .item-row, .footer-note, .lot-card{ touch-action: manipulation; }
   html,body{margin:0;padding:0;}
   body{
     background:var(--cream);
@@ -129,6 +132,8 @@
   .pick-row .pid{ font-family:'SF Mono',monospace; font-size:11px; color:var(--ink-soft); margin-right:8px; }
   .pick-row .prate{ font-family:'SF Mono',monospace; font-size:13px; color:var(--gold); white-space:nowrap; }
   .pick-count{ font-size:12px; color:var(--ink-soft); margin-bottom:8px; font-style:italic; }
+  #team-consensus-banner{ background:#fdf1ec; border:1.5px solid var(--rust); border-radius:10px; padding:11px 13px; margin-bottom:10px; text-align:center; }
+  #consensus-text{ font-size:13.5px; color:var(--ink); }
   .bid-caption{ text-align:center; font-size:13px; color:var(--ink-soft); font-style:italic; margin-top:10px; }
 
   .status-line{ text-align:center; font-size:13px; color:var(--ink-soft); margin:10px 0; min-height:18px; }
@@ -161,7 +166,7 @@
   .debug-panel-head button{ background:#2a2a26; color:#fff; border:1px solid #444; border-radius:6px; padding:5px 9px; font-size:11px; margin-left:6px; }
   #debug-log-content{ white-space:pre-wrap; word-break:break-word; line-height:1.5; }
   .debug-cmd-row{ display:flex; gap:6px; margin-top:10px; }
-  .debug-cmd-row input{ flex:1; min-width:0; background:#2a2a26; border:1px solid #444; border-radius:6px; color:#8fe08f; font-family:'SF Mono',Menlo,monospace; font-size:12px; padding:8px; }
+  .debug-cmd-row input{ flex:1; min-width:0; background:#2a2a26; border:1px solid #444; border-radius:6px; color:#8fe08f; font-family:'SF Mono',Menlo,monospace; font-size:16px; padding:8px; }
   .debug-cmd-row button{ background:var(--rust); color:#fff; border:none; border-radius:6px; padding:8px 14px; font-family:'Helvetica Neue',sans-serif; font-weight:700; font-size:12px; }
   .debug-entry{ border-bottom:1px solid #333; padding:6px 0; }
   .debug-entry .ts{ color:#777; }
@@ -240,9 +245,10 @@
       </div>
       <div id="host-mode-wrap" class="hidden">
         <div class="btn-row" style="margin-top:10px;">
-          <button class="btn btn-secondary" data-hostmode="2p" id="btn-mode-2p">2-Player Room</button>
+          <button class="btn btn-secondary" data-hostmode="2p" id="btn-mode-2p">2-Player</button>
           <button class="btn btn-secondary" data-hostmode="3p" id="btn-mode-3p">3-Player (Hosted)</button>
         </div>
+        <button class="btn btn-secondary" data-hostmode="2v2" id="btn-mode-2v2" style="margin-top:8px;">2v2 Teams</button>
       </div>
       <button class="btn btn-primary" id="btn-nickname-continue">Continue</button>
       <button class="btn btn-ghost" id="btn-nickname-back">← back</button>
@@ -277,6 +283,10 @@
       <div class="bid-display" id="bid-display">$0</div>
       <div class="ticker" id="ticker"></div>
 
+      <div id="team-consensus-banner" class="hidden">
+        <div id="consensus-text"></div>
+        <button class="btn btn-primary hidden" id="btn-agree-team" style="margin-top:6px;"></button>
+      </div>
       <div id="bid-controls">
         <input type="number" id="bid-amount-input" inputmode="numeric" class="bid-amount-input">
         <div class="btn-row" style="margin-top:10px;">
@@ -685,11 +695,12 @@ $('btn-practice').onclick = ()=>{
 };
 $('btn-mode-2p').onclick = ()=>{ App.hostMode='2p'; markHostModeBtn('2p'); };
 $('btn-mode-3p').onclick = ()=>{ App.hostMode='3p'; markHostModeBtn('3p'); };
+$('btn-mode-2v2').onclick = ()=>{ App.hostMode='2v2'; markHostModeBtn('2v2'); };
 function markHostModeBtn(m){
-  $('btn-mode-2p').classList.toggle('btn-primary', m==='2p');
-  $('btn-mode-2p').classList.toggle('btn-secondary', m!=='2p');
-  $('btn-mode-3p').classList.toggle('btn-primary', m==='3p');
-  $('btn-mode-3p').classList.toggle('btn-secondary', m!=='3p');
+  ['2p','3p','2v2'].forEach(k=>{
+    $('btn-mode-'+k).classList.toggle('btn-primary', m===k);
+    $('btn-mode-'+k).classList.toggle('btn-secondary', m!==k);
+  });
 }
 $('btn-nickname-back').onclick = ()=> showScreen('screen-home');
 $('btn-nickname-continue').onclick = async ()=>{
@@ -707,7 +718,7 @@ $('btn-nickname-continue').onclick = async ()=>{
       App.roomCode = code; App.role='joiner';
       await joinRoom();
     } else {
-      if(!App.hostMode){ alert('Pick 2-Player or 3-Player.'); return; }
+      if(!App.hostMode){ alert('Pick 2-Player, 3-Player, or 2v2 Teams.'); return; }
       App.role = App.hostMode==='3p' ? 'host' : 'creator';
       await createRoom();
     }
@@ -788,8 +799,9 @@ function applyRoomIfNewest(seq, room){
 function enterLobby(room){
   showScreen('screen-lobby');
   $('lobby-code').textContent = room.code;
-  $('lobby-plural').textContent = room.hostMode==='3p' ? 's' : '';
+  $('lobby-plural').textContent = (room.hostMode==='3p' || room.hostMode==='2v2') ? 's' : '';
   $('lobby-role-note').textContent = App.role==='host' ? "You're hosting — you'll watch, not bid."
+    : room.hostMode==='2v2' ? "You'll share a team with one other player — you both have to agree before a raise or pass goes through."
     : App.role==='creator' ? "Waiting for someone to join…" : "You're in!";
   App.onlineBidLogSeen = 0;
   App.lobbySeenNicks = null; // reset join-toast tracking for a fresh lobby
@@ -804,8 +816,17 @@ function renderLobbyPlayers(room){
     });
   }
   App.lobbySeenNicks = curNicks;
-  wrap.innerHTML = room.players.map(p=>`<div style="padding:6px;">👤 <b>${escapeHtml(p.nickname)}</b> ${p.role==='host'?'<span class="badge">host</span>':''}</div>`).join('');
-  const needed = room.hostMode==='3p' ? 3 : 2;
+  if(room.hostMode==='2v2'){
+    const teamHTML = teamIdx => room.players.filter(p=>p.team===teamIdx)
+      .map(p=>`<div style="padding:4px 0;">👤 <b>${escapeHtml(p.nickname)}</b></div>`).join('')
+      || '<div style="padding:4px 0; color:var(--ink-soft); font-style:italic;">— open seat —</div>';
+    wrap.innerHTML = `
+      <div class="player-card" style="text-align:left; margin-bottom:8px;"><b>Team A</b>${teamHTML(0)}</div>
+      <div class="player-card" style="text-align:left;"><b>Team B</b>${teamHTML(1)}</div>`;
+  } else {
+    wrap.innerHTML = room.players.map(p=>`<div style="padding:6px;">👤 <b>${escapeHtml(p.nickname)}</b> ${p.role==='host'?'<span class="badge">host</span>':''}</div>`).join('');
+  }
+  const needed = room.hostMode==='3p' ? 3 : room.hostMode==='2v2' ? 4 : 2;
   $('lobby-waiting').textContent = room.players.length < needed ? `Waiting for players to join… (${room.players.length}/${needed})` : 'Everyone is in — starting…';
 }
 function showJoinedToast(nick){
@@ -975,6 +996,10 @@ function startContestedLot(P){
   P.passStreak = 0;
 }
 function unsoldLot(P){
+  if(P.currentLot){
+    if(P.catThemeKey){ P.candidates = P.candidates||[]; P.candidates.push([P.currentLot.name, P.currentLot.r]); }
+    else { P.itemPool.push([P.currentLot.name, P.currentLot.r]); }
+  }
   P.mode='idle'; P.currentLot=null;
   P.openerIndex = 1-P.openerIndex;
   setTimeout(()=>drawNextLotPractice(), 400);
@@ -1109,6 +1134,17 @@ async function aiTakeTurn(){
   if(ai.budget < nextMin){ aiPass(); return; }
 
   const totalRemaining = 5 - ai.items.length;       // includes this pick
+
+  // Genuine disinterest in weak items — without this the ceiling math always
+  // clears a $1 opening bid, so the AI contested (and usually won) literally
+  // everything regardless of quality. Below-average items get a real chance
+  // of a flat pass, scaling down as picks run low (never on the final pick,
+  // where the existing aggressive end-game behavior still applies).
+  if(totalRemaining > 1 && P.currentLot.r <= 4){
+    const disinterest = Math.min(0.6, (5 - P.currentLot.r) * 0.08) * (totalRemaining / 5);
+    if(Math.random() < disinterest){ aiPass(); return; }
+  }
+
   const futurePicksAfterThis = totalRemaining - 1;  // picks still needed AFTER this one
   const reserve = futurePicksAfterThis;             // keep at least $1 per future required pick
 
@@ -1183,6 +1219,7 @@ function renderPracticeDraft(){
       renderBidControls({
         budget: P.players[0].budget,
         minAmount: P.currentBid+1,
+        lotKey: P.currentLot.name+'|'+P.currentBid,
         primaryLabel: 'Raise',
         secondaryLabel: 'Pass',
         onPrimary: (amt)=>{ sndClick(); humanRaise(amt); },
@@ -1197,6 +1234,7 @@ function renderPracticeDraft(){
       const budget = P.players[0].budget;
       renderBidControls({
         budget, minAmount:1, freeMode: budget===0,
+        lotKey: P.currentLot.name,
         primaryLabel: 'Claim',
         secondaryLabel: `Skip it (${3-P.skipsUsed} left)`,
         onPrimary: (amt)=>{ sndClick(); humanClaim(amt); },
@@ -1215,6 +1253,21 @@ function renderBidControls(opts){
   const input = $('bid-amount-input');
   const primaryBtn = $('btn-submit-bid');
   const secondaryBtn = $('btn-secondary-bid');
+  // A contested lot with no free-claim option: if the player's budget can't
+  // even cover the minimum raise, there is genuinely nothing to offer them —
+  // showing a raise input anyway (min > max) produced a control that silently
+  // submitted $0. Make the only real option (Pass) explicit instead.
+  const cannotAfford = !opts.freeMode && opts.budget < opts.minAmount;
+  if(cannotAfford){
+    input.classList.add('hidden');
+    primaryBtn.classList.add('hidden');
+    secondaryBtn.textContent = opts.secondaryLabel || 'Pass';
+    secondaryBtn.classList.remove('hidden');
+    secondaryBtn.onclick = opts.onSecondary;
+    $('bid-caption').textContent = `You have $${opts.budget} — not enough to raise. This lot is still contested, so it isn't a free claim.`;
+    return;
+  }
+  primaryBtn.classList.remove('hidden');
   if(opts.freeMode){
     input.classList.add('hidden');
     primaryBtn.textContent = 'Claim (Free)';
@@ -1223,7 +1276,13 @@ function renderBidControls(opts){
     input.classList.remove('hidden');
     input.min = opts.minAmount;
     input.max = opts.budget;
-    input.value = Math.min(opts.minAmount, opts.budget);
+    // A poll lands every second; don't wipe an amount the player is typing.
+    const editing = (document.activeElement === input);
+    const stale = parseInt(input.value,10) < opts.minAmount;
+    if(!editing && (input.dataset.lotKey !== opts.lotKey || stale)){
+      input.value = Math.min(opts.minAmount, opts.budget);
+      input.dataset.lotKey = opts.lotKey || '';
+    }
     primaryBtn.textContent = opts.primaryLabel;
     primaryBtn.onclick = ()=>{
       let amt = parseInt(input.value,10);
@@ -1239,6 +1298,8 @@ function renderBidControls(opts){
 }
 function hideBidControls(){
   $('bid-controls').classList.add('hidden');
+  $('team-consensus-banner').classList.add('hidden');
+  $('btn-agree-team').classList.add('hidden');
 }
 
 function roleLabel(catThemeKey, cat){
@@ -1272,14 +1333,61 @@ function renderStalls(players, leadingIdx, turnIdx, catThemeKey){
 }
 
 /* ============ ONLINE DRAFT RENDER ============ */
-function myPlayerIndex(room){
-  const bidders = room.players.filter(p=>p.role!=='host');
-  return bidders.findIndex(p=>p.nickname===App.nickname);
+// A "side" is one contestant in the auction: a single player normally, or a
+// whole TEAM in a 2v2 room (shared budget/items, either member can act for it).
+function sidesOfClient(room){
+  return room.hostMode==='2v2' ? room.teams : room.players.filter(p=>p.role!=='host');
 }
+function sideLabelClient(room, idx){
+  if(room.hostMode==='2v2') return idx===0 ? 'Team A' : 'Team B';
+  const s = sidesOfClient(room)[idx];
+  return s ? s.nickname : '?';
+}
+function mySideIndexClient(room){
+  if(room.hostMode==='2v2'){
+    const p = room.players.find(p=>p.nickname===App.nickname);
+    return p ? p.team : -1;
+  }
+  return sidesOfClient(room).findIndex(p=>p.nickname===App.nickname);
+}
+function myPlayerIndex(room){ return mySideIndexClient(room); }
+
+function renderTeamConsensusBanner(room, myTeam){
+  const g = room.game;
+  const banner = $('team-consensus-banner');
+  const btn = $('btn-agree-team');
+  const pa = g.pendingAction;
+  if(room.hostMode!=='2v2' || !pa || pa.team!==myTeam){
+    banner.classList.add('hidden'); btn.classList.add('hidden');
+    return;
+  }
+  banner.classList.remove('hidden');
+  const teammate = room.players.find(p=>p.team===myTeam && p.nickname!==App.nickname);
+  const tmName = teammate ? teammate.nickname : 'your teammate';
+  const label = pa.type==='raise' ? `raise to $${pa.amount}`
+    : pa.type==='claim' ? `claim it for ${pa.amount===0?'free':'$'+pa.amount}`
+    : pa.type==='skip' ? 'reroll this one'
+    : 'pass';
+  if(pa.agreedBy.includes(App.nickname)){
+    $('consensus-text').textContent = `You proposed to ${label} — waiting for ${tmName} to agree (1/2 agreed). They have about 20s before it goes through on its own.`;
+    btn.classList.add('hidden');
+  } else {
+    $('consensus-text').textContent = `${tmName} wants to ${label}. Agree below, or make a different choice (1/2 agreed).`;
+    btn.textContent = `Agree — ${label}`;
+    btn.classList.remove('hidden');
+    btn.onclick = ()=>{
+      if(pa.type==='raise') onlineAction('raise',{amount:pa.amount});
+      else if(pa.type==='pass') onlineAction('pass',{});
+      else if(pa.type==='claim') onlineAction('claim',{amount:pa.amount});
+      else if(pa.type==='skip') onlineAction('skip',{});
+    };
+  }
+}
+
 function renderOnlineDraft(room){
   const g = room.game;
   if(!g){ return; }
-  const bidders = room.players.filter(p=>p.role!=='host');
+  const bidders = sidesOfClient(room);
 
   if(g.bidLog){
     if(App.onlineBidLogSeen===undefined || g.bidLog.length<App.onlineBidLogSeen) App.onlineBidLogSeen = 0;
@@ -1287,7 +1395,7 @@ function renderOnlineDraft(room){
       for(let i=App.onlineBidLogSeen;i<g.bidLog.length;i++){
         const entry = g.bidLog[i];
         if(!bidders[entry.player]) continue;
-        showItemWonToast(bidders[entry.player].nickname, entry.name, entry.amount);
+        showItemWonToast(sideLabelClient(room, entry.player), entry.name, entry.amount);
         sndGavel();
         if(entry.amount<=2) setTimeout(()=>{ sndCoin(); confettiBurst(); }, 260);
       }
@@ -1295,8 +1403,13 @@ function renderOnlineDraft(room){
     }
   }
 
-  renderStalls(bidders.map(p=>({nick:p.nickname, budget:p.budget, items:p.items})),
-    g.currentBidderIdx, g.mode==='contested'?g.turnIdx:null, room.theme.key);
+  const displaySides = room.hostMode==='2v2'
+    ? room.teams.map((t,i)=>({
+        nick: `${i===0?'Team A':'Team B'} (${room.players.filter(p=>p.team===i).map(p=>p.nickname).join(' & ')})`,
+        budget: t.budget, items: t.items
+      }))
+    : bidders.map(p=>({nick:p.nickname, budget:p.budget, items:p.items}));
+  renderStalls(displaySides, g.currentBidderIdx, g.mode==='contested'?g.turnIdx:null, room.theme.key);
 
   const amHost = room.players.find(p=>p.nickname===App.nickname && p.role==='host');
   $('host-watch-note').classList.toggle('hidden', !amHost);
@@ -1341,7 +1454,7 @@ function renderOnlineDraft(room){
   $('lot-cat').textContent = g.currentLot.cat ? roleLabel(room.theme.key, g.currentLot.cat) : (room.theme.emoji||'🎯')+' '+room.theme.name;
   $('lot-name').textContent = g.currentLot.name;
   $('lot-stars').textContent = stars(g.currentLot.r);
-  $('bid-display').innerHTML = '$'+g.currentBid + (g.currentBidderIdx!==null && g.currentBidderIdx!==undefined ? `<span class="by">— currently held by ${escapeHtml(bidders[g.currentBidderIdx].nickname)}</span>` : '');
+  $('bid-display').innerHTML = '$'+g.currentBid + (g.currentBidderIdx!==null && g.currentBidderIdx!==undefined ? `<span class="by">— currently held by ${escapeHtml(sideLabelClient(room, g.currentBidderIdx))}</span>` : '');
   $('ticker').textContent = (g.tickerLog&&g.tickerLog.length) ? g.tickerLog.join(' → ') : 'New lot — place your bid';
 
   $('waiting-turn').classList.add('hidden');
@@ -1349,18 +1462,20 @@ function renderOnlineDraft(room){
 
   const myIdx = myPlayerIndex(room);
   if(amHost){
-    $('status-line').textContent = g.mode==='contested' ? `${bidders[g.turnIdx].nickname}'s turn` : `${bidders[g.soloPlayerIdx].nickname} claims this one`;
+    $('status-line').textContent = g.mode==='contested' ? `${sideLabelClient(room, g.turnIdx)}'s turn` : `${sideLabelClient(room, g.soloPlayerIdx)} claims this one`;
     $('waiting-turn').classList.remove('hidden');
     $('waiting-turn').textContent = "You're watching this one play out.";
     return;
   }
   if(g.mode==='contested'){
     const myTurn = g.turnIdx===myIdx;
-    $('status-line').textContent = myTurn ? "Your turn — raise or pass" : `● Waiting for ${bidders[g.turnIdx].nickname} to respond…`;
+    $('status-line').textContent = myTurn ? "Your turn — raise or pass" : `● Waiting for ${sideLabelClient(room, g.turnIdx)} to respond…`;
     if(myTurn){
+      renderTeamConsensusBanner(room, myIdx);
       renderBidControls({
         budget: bidders[myIdx].budget,
         minAmount: g.currentBid+1,
+        lotKey: g.currentLot.name+'|'+g.currentBid,
         primaryLabel: 'Raise',
         secondaryLabel: 'Pass',
         onPrimary: (amt)=>onlineAction('raise',{amount:amt}),
@@ -1375,15 +1490,17 @@ function renderOnlineDraft(room){
       const budget = bidders[myIdx].budget;
       // In a hosted room the host chooses the lots, so there's no reroll to offer.
       const canSkip = !amHost && !roomHostName(room);
+      renderTeamConsensusBanner(room, myIdx);
       renderBidControls({
         budget, minAmount:1, freeMode: budget===0,
+        lotKey: g.currentLot.name,
         primaryLabel: 'Claim',
         secondaryLabel: canSkip ? `Skip it (${3-(g.skipsUsed||0)} left)` : '',
         onPrimary: (amt)=>onlineAction('claim',{amount:amt}),
         onSecondary: canSkip ? ()=>onlineAction('skip',{}) : ()=>{}
       });
     } else {
-      $('status-line').textContent = `${bidders[g.soloPlayerIdx].nickname} is claiming this one…`;
+      $('status-line').textContent = `${sideLabelClient(room, g.soloPlayerIdx)} is claiming this one…`;
       $('waiting-turn').classList.remove('hidden');
     }
   }
@@ -1507,9 +1624,11 @@ function showResultsScreen(players, P){
 
 /* ============ RESULTS: ONLINE ============ */
 function renderResultsFromRoom(room){
-  const bidders = room.players.filter(p=>p.role!=='host');
+  const bidders = sidesOfClient(room);
   const itemsArr = bidders.map(p=>p.items);
-  const nicks = bidders.map(p=>p.nickname);
+  const nicks = room.hostMode==='2v2'
+    ? room.teams.map((t,i)=>`${i===0?'Team A':'Team B'} (${room.players.filter(p=>p.team===i).map(p=>p.nickname).join(' & ')})`)
+    : bidders.map(p=>p.nickname);
   const budgets = bidders.map(p=>p.budget);
   const amHostOrCreator = room.players.find(p=>p.nickname===App.nickname && (p.role==='host'||p.role==='creator'));
   renderResults(itemsArr, nicks, budgets, room.game.bidLog||[], resultViewFor(room.theme.key), {

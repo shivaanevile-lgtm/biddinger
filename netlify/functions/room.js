@@ -59,7 +59,7 @@ function buildCategoryQueue(catThemeKey, cat, exclude){
 // Names already on someone's team — a refilled queue must never re-offer them.
 function draftedNames(room){
   const out = new Set();
-  room.players.forEach(p => (p.items||[]).forEach(it => out.add(it.name)));
+  sidesOf(room).forEach(p => (p.items||[]).forEach(it => out.add(it.name)));
   return out;
 }
 
@@ -94,10 +94,102 @@ function playerNeedsFlat(p){ return p.items.length < 5; }
 function playerNeedsCat(p, cat, requiredMap){ return p.items.filter(it => it.cat === cat).length < requiredMap[cat]; }
 
 function roomHost(room){ return room.players.find(p => p.role === 'host'); }
+// The "contestants" in the auction — one entry per player normally, or one
+// entry per TEAM in a 2v2 room (so budget/items are shared, not per-person).
+function sidesOf(room){
+  return room.hostMode === '2v2' ? room.teams : room.players.filter(p => p.role !== 'host');
+}
+function sideLabel(room, sideIdx){
+  if (room.hostMode === '2v2') return sideIdx === 0 ? 'Team A' : 'Team B';
+  const s = sidesOf(room)[sideIdx];
+  return s ? s.nickname : '?';
+}
+
+// In a 2v2 room, both teammates must submit the SAME proposal before it takes
+// effect. Returns true if the action should execute now (consensus reached,
+// or this isn't a team room at all); false if it was only recorded and is
+// waiting on the teammate — the caller should stop without executing.
+function checkTeamConsensus(room, sideIdx, nickname, type, amount){
+  if (room.hostMode !== '2v2') return true;
+  const g = room.game;
+  const amt = amount === undefined ? null : amount;
+  const pa = g.pendingAction;
+  const matches = pa && pa.team === sideIdx && pa.type === type && pa.amount === amt;
+  if (matches) {
+    if (!pa.agreedBy.includes(nickname)) pa.agreedBy.push(nickname);
+    if (pa.agreedBy.length >= 2) { g.pendingAction = null; return true; }
+    return false;
+  }
+  g.pendingAction = { team: sideIdx, type, amount: amt, agreedBy: [nickname], expiresAt: Date.now() + 20000 };
+  return false;
+}
+
+// If a team's teammate never responded, don't stall the game — treat the
+// silence as tacit agreement once the 20s window is up. Called at the top of
+// every request that touches this room, so it fires on the next poll/action
+// regardless of who happens to make it.
+function tickPendingTeamAction(room){
+  const g = room.game;
+  if (!g || !g.pendingAction) return false;
+  if (Date.now() < g.pendingAction.expiresAt) return false;
+  const pa = g.pendingAction;
+  g.pendingAction = null;
+  applyResolvedAction(room, pa.team, pa.type, pa.amount);
+  return true;
+}
+
+// The actual state mutation for a resolved (consensus-reached, or
+// non-team-room) raise/pass/skip/claim. Shared by the normal path and the
+// timeout path so they can never drift out of sync with each other.
+function applyResolvedAction(room, sideIdx, type, amount){
+  const g = room.game;
+  const bidders = sidesOf(room);
+  if (type === 'raise') {
+    g.currentBid = amount; g.currentBidderIdx = sideIdx; g.passStreak = 0;
+    g.tickerLog.push(`${sideLabel(room, sideIdx)}: $${amount}`);
+    g.turnIdx = 1 - sideIdx;
+  } else if (type === 'pass') {
+    if (g.currentBidderIdx === null) {
+      g.passStreak = (g.passStreak||0) + 1;
+      if (g.passStreak >= 2) {
+        const allBroke = bidders.every(p => p.budget < 1);
+        if (allBroke) resolveLotWinner(room, sideIdx, 0);
+        else unsoldLot(room);
+      } else { g.turnIdx = 1 - sideIdx; }
+    } else {
+      resolveLotWinner(room, g.currentBidderIdx, g.currentBid);
+    }
+  } else if (type === 'claim') {
+    resolveLotWinner(room, sideIdx, amount);
+  } else if (type === 'skip') {
+    g.skipsUsed++;
+    if (g.skipsUsed >= 4) {
+      resolveLotWinner(room, sideIdx, bidders[sideIdx].budget === 0 ? 0 : 1);
+    } else {
+      const cat = g.currentLot.cat;
+      const passedOver = g.currentLot;
+      if (g.catThemeKey) {
+        const cand = g.catQueue.shift();
+        if (cand) { g.catQueue.push([passedOver.name, passedOver.r]); g.currentLot = { name: cand[0], r: cand[1], cat }; }
+      } else {
+        const cand = g.itemPool.shift();
+        if (cand) { g.itemPool.push({ name: passedOver.name, r: passedOver.r }); g.currentLot = { name: cand.name, r: cand.r, cat: null }; }
+      }
+    }
+  }
+}
+
+function mySideIndex(room, nickname){
+  if (room.hostMode === '2v2') {
+    const p = room.players.find(p => p.nickname === nickname);
+    return p ? p.team : -1;
+  }
+  return sidesOf(room).findIndex(p => p.nickname === nickname);
+}
 
 function drawNextLot(room){
   const g = room.game;
-  const bidders = room.players.filter(p => p.role !== 'host');
+  const bidders = sidesOf(room);
   if (g.catThemeKey) {
     const ct = CATEGORY_THEMES[g.catThemeKey];
     let cat = ct.cats[g.catIdx];
@@ -173,7 +265,7 @@ function startLotMode(g, wanting){
 
 function resolveLotWinner(room, winnerIdx, amount){
   const g = room.game;
-  const bidders = room.players.filter(p => p.role !== 'host');
+  const bidders = sidesOf(room);
   const winner = bidders[winnerIdx];
   winner.budget -= amount;
   winner.items.push({ name: g.currentLot.name, r: g.currentLot.r, cat: g.currentLot.cat, paid: amount });
@@ -184,6 +276,12 @@ function resolveLotWinner(room, winnerIdx, amount){
 }
 function unsoldLot(room){
   const g = room.game;
+  // Recycle rather than discard, or a run of double-passes can drain the
+  // whole pool with nobody having drafted anything (worst on small pools).
+  if (g.currentLot) {
+    if (g.catThemeKey) { g.catQueue = g.catQueue || []; g.catQueue.push([g.currentLot.name, g.currentLot.r]); }
+    else { g.itemPool = g.itemPool || []; g.itemPool.push({ name: g.currentLot.name, r: g.currentLot.r }); }
+  }
   g.mode = 'idle'; g.currentLot = null;
   g.openerIdx = 1 - g.openerIdx;
   drawNextLot(room);
@@ -241,12 +339,15 @@ exports.handler = async (event) => {
     if (action === 'create') {
       const code = roomCodeGen();
       const themeResolved = resolveThemeItems(body.theme || {});
-      const hostMode = body.hostMode === '3p' ? '3p' : '2p';
+      const hostMode = body.hostMode === '3p' ? '3p' : body.hostMode === '2v2' ? '2v2' : '2p';
       const room = {
         code, hostMode, phase: 'lobby',
         theme: { key: (body.theme&&body.theme.themeKey)||'backyard', name: themeResolved.name, emoji: themeResolved.emoji,
-                 football: themeResolved.football, items: themeResolved.items || null, custom: body.theme&&body.theme.customTheme || null },
-        players: [ { nickname: body.nickname, role: hostMode==='3p' ? 'host' : 'creator', budget: 20, items: [] } ],
+                 categoryTheme: themeResolved.categoryTheme, items: themeResolved.items || null, custom: body.theme&&body.theme.customTheme || null },
+        players: hostMode === '2v2'
+          ? [ { nickname: body.nickname, role: 'creator', team: 0 } ]
+          : [ { nickname: body.nickname, role: hostMode==='3p' ? 'host' : 'creator', budget: 20, items: [] } ],
+        teams: hostMode === '2v2' ? [ { budget: 20, items: [] }, { budget: 20, items: [] } ] : undefined,
         game: null,
         rev: 1
       };
@@ -258,7 +359,7 @@ exports.handler = async (event) => {
       const code = body.roomCode;
       if (!code) return json(400, { error: 'Missing room code' });
       const result = await readMutateWrite(s, code, (room) => {
-        const needed = room.hostMode === '3p' ? 3 : 2;
+        const needed = room.hostMode === '3p' ? 3 : room.hostMode === '2v2' ? 4 : 2;
         if (room.players.some(p => p.nickname === body.nickname)) {
           // Same nickname trying to join again almost always means: their first
           // attempt actually succeeded server-side, but the response never made
@@ -270,9 +371,18 @@ exports.handler = async (event) => {
         if (room.players.length >= needed) {
           return { status: 400, error: `Room is full (${room.players.length}/${needed}). Players already in: ${room.players.map(p=>`${p.nickname}[${p.role}]`).join(', ')}. Room phase: ${room.phase}, created for hostMode "${room.hostMode}".` };
         }
-        room.players.push({ nickname: body.nickname, role: 'bidder', budget: 20, items: [] });
+        if (room.hostMode === '2v2') {
+          // fill team 0 (2 seats) before team 1
+          const teamCounts = [0,0];
+          room.players.forEach(p => teamCounts[p.team]++);
+          const team = teamCounts[0] < 2 ? 0 : 1;
+          room.players.push({ nickname: body.nickname, role: 'bidder', team });
+        } else {
+          room.players.push({ nickname: body.nickname, role: 'bidder', budget: 20, items: [] });
+        }
         if (room.players.length === needed) {
           room.phase = 'drafting';
+          if (room.hostMode === '2v2') room.teams = [ { budget: 20, items: [] }, { budget: 20, items: [] } ];
           room.game = newGame(resolveThemeItems({ themeKey: room.theme.key, customTheme: room.theme.custom }));
           drawNextLot(room);
         }
@@ -283,74 +393,59 @@ exports.handler = async (event) => {
 
     if (action === 'state') {
       const code = body.roomCode;
-      const got = await s.get(code, { type: 'json' });
-      if (!got) return json(404, { error: 'Room not found' });
-      const opts = (got.game && got.game.awaitingHostPick) ? hostPickOptions(got) : null;
-      return json(200, { room: got, options: opts });
+      // Cheap plain read in the common case. Only escalate to a write if a
+      // 2v2 team's proposal has actually expired, so a poller's screen
+      // catches the auto-resolved outcome without anyone submitting anything.
+      const peek = await s.get(code, { type: 'json' });
+      if (!peek) return json(404, { error: 'Room not found' });
+      const pa = peek.game && peek.game.pendingAction;
+      if (pa && Date.now() >= pa.expiresAt) {
+        const result = await readMutateWrite(s, code, (room) => {
+          if (room.hostMode === '2v2') tickPendingTeamAction(room);
+        });
+        if (!result.error) {
+          const opts = (result.room.game && result.room.game.awaitingHostPick) ? hostPickOptions(result.room) : null;
+          return json(200, { room: result.room, options: opts });
+        }
+      }
+      const opts = (peek.game && peek.game.awaitingHostPick) ? hostPickOptions(peek) : null;
+      return json(200, { room: peek, options: opts });
     }
 
     if (action === 'raise' || action === 'pass' || action === 'skip' || action === 'claim') {
       const code = body.roomCode;
       const result = await readMutateWrite(s, code, (room) => {
+        // A stale proposal from a non-responding teammate resolves itself
+        // here, before we even look at the incoming request.
+        if (room.hostMode === '2v2') tickPendingTeamAction(room);
         if (room.phase !== 'drafting' || !room.game || !room.game.currentLot) return { status: 400, error: 'No active lot', retryable: true };
         if (room.game.awaitingHostPick) return { status: 400, error: 'Waiting for the host to choose the lot', retryable: true };
         const g = room.game;
-        const bidders = room.players.filter(p => p.role !== 'host');
-        const myIdx = bidders.findIndex(p => p.nickname === body.nickname);
+        const bidders = sidesOf(room);
+        const myIdx = mySideIndex(room, body.nickname);
         if (myIdx < 0) return { status: 403, error: 'Not a bidder in this room', retryable: true };
 
         if (action === 'raise') {
           if (g.mode !== 'contested' || g.turnIdx !== myIdx) return { status: 400, error: 'Not your turn', retryable: true };
           const amount = parseInt(body.amount, 10);
           if (!(amount > g.currentBid) || amount > bidders[myIdx].budget) return { status: 400, error: 'Invalid raise' };
-          g.currentBid = amount; g.currentBidderIdx = myIdx; g.passStreak = 0;
-          g.tickerLog.push(`${bidders[myIdx].nickname}: $${amount}`);
-          g.turnIdx = 1 - g.turnIdx;
+          if (!checkTeamConsensus(room, myIdx, body.nickname, 'raise', amount)) return;
+          applyResolvedAction(room, myIdx, 'raise', amount);
         } else if (action === 'pass') {
           if (g.mode !== 'contested' || g.turnIdx !== myIdx) return { status: 400, error: 'Not your turn', retryable: true };
-          if (g.currentBidderIdx === null) {
-            g.passStreak = (g.passStreak||0) + 1;
-            if (g.passStreak >= 2) {
-              // Both declined with no bid. If neither can actually afford the
-              // $1 minimum, passing is forced, not a choice — leaving the lot
-              // unsold would repeat every round until the pool emptied and
-              // players finished under the 5-item cap. Award it free instead.
-              const allBroke = bidders.every(p => p.budget < 1);
-              if (allBroke) resolveLotWinner(room, myIdx, 0);
-              else unsoldLot(room);
-            }
-            else { g.turnIdx = 1 - g.turnIdx; }
-          } else {
-            resolveLotWinner(room, g.currentBidderIdx, g.currentBid);
-          }
+          if (!checkTeamConsensus(room, myIdx, body.nickname, 'pass', null)) return;
+          applyResolvedAction(room, myIdx, 'pass', null);
         } else if (action === 'skip') {
           if (roomHost(room)) return { status: 400, error: 'The host chooses the lots in this room' };
           if (g.mode !== 'solo' || g.soloPlayerIdx !== myIdx) return { status: 400, error: 'Not your turn', retryable: true };
-          g.skipsUsed++;
-          if (g.skipsUsed >= 4) {
-            resolveLotWinner(room, myIdx, bidders[myIdx].budget === 0 ? 0 : 1);
-          } else {
-            const cat = g.currentLot.cat;
-            const passedOver = g.currentLot;
-            if (g.catThemeKey) {
-              const cand = g.catQueue.shift();
-              if (cand) {
-                g.catQueue.push([passedOver.name, passedOver.r]); // recycle to the back
-                g.currentLot = { name: cand[0], r: cand[1], cat };
-              }
-            } else {
-              const cand = g.itemPool.shift();
-              if (cand) {
-                g.itemPool.push({ name: passedOver.name, r: passedOver.r }); // recycle to the back
-                g.currentLot = { name: cand.name, r: cand.r, cat: null };
-              }
-            }
-          }
+          if (!checkTeamConsensus(room, myIdx, body.nickname, 'skip', null)) return;
+          applyResolvedAction(room, myIdx, 'skip', null);
         } else if (action === 'claim') {
           if (g.mode !== 'solo' || g.soloPlayerIdx !== myIdx) return { status: 400, error: 'Not your turn', retryable: true };
           const budget = bidders[myIdx].budget;
           let amount = budget === 0 ? 0 : Math.max(1, Math.min(budget, parseInt(body.amount,10) || 1));
-          resolveLotWinner(room, myIdx, amount);
+          if (!checkTeamConsensus(room, myIdx, body.nickname, 'claim', amount)) return;
+          applyResolvedAction(room, myIdx, 'claim', amount);
         }
       });
       if (result.error) return json(result.status, { error: result.error });
@@ -366,10 +461,11 @@ exports.handler = async (event) => {
         }
         const themeResolved = resolveThemeItems(body.theme || {});
         room.theme = { key: (body.theme&&body.theme.themeKey)||room.theme.key, name: themeResolved.name, emoji: themeResolved.emoji,
-                       football: themeResolved.football, items: themeResolved.items || null, custom: body.theme&&body.theme.customTheme || null };
-        room.players.forEach(p => { p.budget = 20; p.items = []; });
+                       categoryTheme: themeResolved.categoryTheme, items: themeResolved.items || null, custom: body.theme&&body.theme.customTheme || null };
+        if (room.hostMode === '2v2') room.teams = [ { budget: 20, items: [] }, { budget: 20, items: [] } ];
+        else room.players.forEach(p => { p.budget = 20; p.items = []; });
+        room.game = null; room.game = newGame(themeResolved);
         room.phase = 'drafting';
-        room.game = newGame(themeResolved);
         drawNextLot(room);
       });
       if (result.error) return json(result.status, { error: result.error });
@@ -406,7 +502,7 @@ exports.handler = async (event) => {
         const strip = arr => { if(!arr) return; const i = arr.findIndex(x => (x[0] || x.name) === chosen.name); if (i > -1) arr.splice(i,1); };
         strip(g.catQueue); strip(g.itemPool);
 
-        const bidders = room.players.filter(p => p.role !== 'host');
+        const bidders = sidesOf(room);
         let wanting;
         if (g.catThemeKey) {
           const ct = CATEGORY_THEMES[g.catThemeKey];
@@ -433,8 +529,8 @@ exports.handler = async (event) => {
       const result = await readMutateWrite(s, code, (room) => {
         if (!room.game) return { status: 400, error: 'No active game', retryable: true };
         const g = room.game;
-        const bidders = room.players.filter(p => p.role !== 'host');
-        const myIdx = bidders.findIndex(p => p.nickname === body.nickname);
+        const bidders = sidesOf(room);
+        const myIdx = mySideIndex(room, body.nickname);
         if (myIdx < 0) return { status: 403, error: 'Not a bidder in this room', retryable: true };
         const cmd = (body.cmd || '').toLowerCase();
         const arg = body.arg || '';
@@ -446,8 +542,12 @@ exports.handler = async (event) => {
           const targetName = parts.slice(1).join(' ').trim();
           let target = bidders[myIdx];
           if (targetName) {
-            target = bidders.find(p => p.nickname.toLowerCase() === targetName.toLowerCase());
-            if (!target) return { status: 400, error: `No bidder named "${targetName}". In this room: ${bidders.map(p=>p.nickname).join(', ')}` };
+            const targetIdx = mySideIndex(room, room.players.find(p => p.nickname.toLowerCase() === targetName.toLowerCase())?.nickname);
+            target = targetIdx >= 0 ? bidders[targetIdx] : null;
+            if (!target) {
+              const known = room.hostMode === '2v2' ? room.players.map(p=>p.nickname).join(', ') : bidders.map(p=>p.nickname).join(', ');
+              return { status: 400, error: `No bidder named "${targetName}". In this room: ${known}` };
+            }
           }
           target.budget = cmd === 'money' ? amt : target.budget + amt;
           if (target.budget < 0) target.budget = 0;

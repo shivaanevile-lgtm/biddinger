@@ -61,6 +61,13 @@ tvshows:{emoji:'📺',name:'Best TV Shows',items:[
  ['Stranger Things',6],['Seinfeld',6],['The Crown',5],['Better Call Saul',7],['Chernobyl',6],['Fargo',6],
  ['Succession',7],['The Bear',6],['True Detective',6],['Cheers',4],['Parks and Recreation',5],
  ['Curb Your Enthusiasm',5],['The West Wing',5],['Ted Lasso',5]]},
+videogames:{emoji:'🎮',name:'Best Video Games',items:[
+ ['The Legend of Zelda: Breath of the Wild',9],['Elden Ring',9],['Minecraft',8],['Red Dead Redemption 2',9],
+ ['The Witcher 3',9],['Super Mario Odyssey',8],['Portal 2',8],['Grand Theft Auto V',8],
+ ['Dark Souls',8],['Half-Life 2',8],['Tetris',7],['Fortnite',6],['Stardew Valley',7],
+ ['Hollow Knight',8],['God of War',8],['Among Us',5],['Halo: Combat Evolved',8],
+ ['Celeste',7],['Rocket League',7],['Animal Crossing: New Horizons',6],['Doom Eternal',7],
+ ['Balatro',7]]},
 music:{emoji:'🎤',name:'Best Music Artists',items:[
  ['The Beatles',9],['Beyoncé',8],['Michael Jackson',9],['Taylor Swift',8],['Kendrick Lamar',8],['Queen',8],
  ['Stevie Wonder',8],['Adele',6],['Prince',8],['Rihanna',6],['Radiohead',6],['Bob Dylan',7],
@@ -150,6 +157,26 @@ const MOVIE = {
       ['A bustling 1920s speakeasy',6],['The Wild West',6],['A dystopian megacity',7]]
  }
 };
+const PIZZA = {
+ pool:{
+  CRUST:[['Neapolitan thin crust',8],['New York foldable slice',8],['Deep dish',7],['Stuffed crust',7],
+      ['Sourdough crust',7],['Detroit-style pan',7],['Cauliflower crust',3],['Thin cracker crust',5],
+      ['Garlic butter crust',6],['Wood-fired charred crust',8]],
+  SAUCE:[['San Marzano tomato',8],['Garlic white sauce',7],['Spicy arrabbiata',7],['Basil pesto',7],
+      ['BBQ sauce',5],['Vodka sauce',7],['Hot honey drizzle',7],['Plain canned tomato',3],
+      ['Alfredo',5],['Olive oil and garlic (no sauce)',5]],
+  CHEESE:[['Fresh buffalo mozzarella',9],['Low-moisture mozzarella',7],['Burrata',8],['Four-cheese blend',8],
+      ['Smoked provolone',7],['Ricotta dollops',6],['Parmesan',6],['Vegan cheese',3],
+      ['Extra cheese, double portion',7],['Goat cheese',6]],
+  TOPPING:[['Pepperoni',8],['Italian sausage',7],['Fresh basil',6],['Prosciutto',8],['Mushrooms',6],
+      ['Caramelized onions',6],['Hot soppressata',8],['Bell peppers',4],['Black olives',4],
+      ['Pineapple',4],['Jalapeños',6],['Bacon',7],['Artichoke hearts',5],['Anchovies',3],
+      ['Arugula',5],['Cherry tomatoes',5],['Roasted garlic',6],['Ground beef',5]]
+ }
+};
+const PIZZA_CATS = ['CRUST','SAUCE','CHEESE','TOPPING'];
+const PIZZA_REQUIRED = {CRUST:1,SAUCE:1,CHEESE:1,TOPPING:2};
+
 const MOVIE_CATS = ['GENRE','DIRECTOR','ACTOR','SETTING'];
 const MOVIE_REQUIRED = {GENRE:1,DIRECTOR:1,ACTOR:2,SETTING:1};
 
@@ -164,7 +191,10 @@ const CATEGORY_THEMES = {
    catShort:{BREAD:'Bread',MEAT:'Meat',CHEESE:'Cheese',CONDIMENT:'Condiment',TOPPING:'Topping'}, resultView:'list'},
  movie:{name:'Build Your Perfect Movie', emoji:'🎬', cats:MOVIE_CATS, required:MOVIE_REQUIRED, pool:MOVIE.pool, icons:null,
    catLabel:{GENRE:'🎭 Genre',DIRECTOR:'🎥 Director',ACTOR:'⭐ Actor',SETTING:'🌍 Setting'},
-   catShort:{GENRE:'Genre',DIRECTOR:'Director',ACTOR:'Actor',SETTING:'Setting'}, resultView:'list'}
+   catShort:{GENRE:'Genre',DIRECTOR:'Director',ACTOR:'Actor',SETTING:'Setting'}, resultView:'list'},
+ pizza:{name:'Build A Pizza', emoji:'🍕', cats:PIZZA_CATS, required:PIZZA_REQUIRED, pool:PIZZA.pool, icons:null,
+   catLabel:{CRUST:'🥖 Crust',SAUCE:'🥫 Sauce',CHEESE:'🧀 Cheese',TOPPING:'🍅 Topping'},
+   catShort:{CRUST:'Crust',SAUCE:'Sauce',CHEESE:'Cheese',TOPPING:'Topping'}, resultView:'list'}
 };
 
 /* Stable numeric IDs. Assigned once in a fixed traversal order so the client
@@ -176,7 +206,7 @@ const ID_BY_NAME = {};
   const add = (name, r, themeKey, cat) => {
     n++;
     ITEM_BY_ID[n] = { id:n, name, r, themeKey, cat };
-    ID_BY_NAME[name] = n;
+    ID_BY_NAME[themeKey + '|' + name] = n;
   };
   Object.keys(THEMES).forEach(k => THEMES[k].items.forEach(it => add(it[0], it[1], k, null)));
   Object.keys(CATEGORY_THEMES).forEach(k => {
@@ -187,8 +217,8 @@ const ID_BY_NAME = {};
     });
   });
 })();
-function itemIdFor(name){ return ID_BY_NAME[name]; }
+function itemIdFor(name, themeKey){ return ID_BY_NAME[themeKey + '|' + name]; }
 function itemById(id){ return ITEM_BY_ID[parseInt(id,10)]; }
 /* END GAME DATA */
 
-module.exports = { THEMES, FOOTBALL, FOOTBALL_CATS, FOOTBALL_REQUIRED, SANDWICH, SANDWICH_CATS, SANDWICH_REQUIRED, MOVIE, MOVIE_CATS, MOVIE_REQUIRED, CATEGORY_THEMES, ITEM_BY_ID, ID_BY_NAME, itemIdFor, itemById };
+module.exports = { THEMES, FOOTBALL, FOOTBALL_CATS, FOOTBALL_REQUIRED, SANDWICH, SANDWICH_CATS, SANDWICH_REQUIRED, MOVIE, MOVIE_CATS, MOVIE_REQUIRED, PIZZA, PIZZA_CATS, PIZZA_REQUIRED, CATEGORY_THEMES, ITEM_BY_ID, ID_BY_NAME, itemIdFor, itemById };

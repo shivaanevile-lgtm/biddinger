@@ -82,12 +82,33 @@ const CUSTOM_FEAT = ['{T} with a secret menu','{T} signed by its creator','{T} w
 const CUSTOM_FILLER = ['A basic {t} starter kit','A gently used {t}','An entry-level {t}','A {t} sample pack',
  'A no-frills {t}','A budget {t}','A secondhand {t}','A travel-size {t}'];
 
+// For a custom theme that's a PLACE you're kitting out, the interesting items
+// are the things that go IN it — not variations of the place itself. This is a
+// generic amenity bank (the generator is offline and can't know what a
+// "treehouse" specifically contains, so these are chosen to suit any space).
+const CUSTOM_SPACE_ITEMS = [
+ ['A 65-inch flat-screen TV',8],['A full gaming setup',8],['A mini fridge stocked with drinks',6],
+ ['String lights',4],['A zipline off the side',7],['A projector and screen',7],
+ ['Surround sound speakers',6],['A bean bag pit',5],['A hammock',4],
+ ['Wi-Fi that never drops',7],['Air conditioning',7],['A wood stove',6],
+ ['A skylight',6],['A rope ladder',3],['A secret trapdoor entrance',7],
+ ['A snack bar counter',5],['A coffee machine',5],['A record player',5],
+ ['Blackout curtains',4],['Heated floors',6],['A telescope',5],
+ ['A bookshelf wall',5],['Neon signage',5],['A pull-out sofa bed',5],
+ ['Solar panels on the roof',6],['A pizza oven',7],['A dartboard',4],
+ ['A pool table',7],['An arcade cabinet',7],['A cozy reading nook',5],
+ ['Panoramic windows',7],['A hot tub',8],['A whiteboard wall',3],
+ ['A drinks fridge with a glass door',6],['Motion-sensor lighting',4],
+ ['A hidden storage compartment',5],['A spiral staircase',6],['A balcony',7],
+ ['Bunk beds',4],['A charging station for every device',5]
+];
+
 const FOOTBALL = {
  pool:{
   GK:[['Alisson Becker',9],['Ederson',8],['Thibaut Courtois',9],['Marc-André ter Stegen',8],
       ['Gianluigi Donnarumma',8],['Emiliano Martínez',8],['Jan Oblak',8],['Mike Maignan',8],
       ['Yassine Bounou',7],['David Raya',7],['André Onana',7],['Nick Pope',7],['Bernd Leno',6],
-      ['Robert Sánchez',6],['Diogo Costa',7]],
+      ['Robert Sánchez',6],['Diogo Costa',7],['Yann Sommer',7]],
   DEF:[['Virgil van Dijk',9],['Rúben Dias',9],['William Saliba',8],['Antonio Rüdiger',8],['Achraf Hakimi',8],
       ['Trent Alexander-Arnold',8],['Alphonso Davies',8],['Theo Hernández',8],['Josko Gvardiol',8],
       ['Kim Min-jae',7],['Marquinhos',8],['Éder Militão',7],['John Stones',7],['Kyle Walker',7],
@@ -101,13 +122,13 @@ const FOOTBALL = {
       ['Moisés Caicedo',7],['Alexis Mac Allister',7],['Aurélien Tchouaméni',7],['Eduardo Camavinga',7],
       ['Nicolò Barella',7],['Sandro Tonali',7],['Ismaël Bennacer',6],['Fabián Ruiz',6],['Marco Verratti',7],
       ['İlkay Gündoğan',7],['Casemiro',7],['Christian Eriksen',6],['Dominik Szoboszlai',7],
-      ['Joshua Kimmich',8],['Leon Goretzka',6]],
+      ['Joshua Kimmich',8],['Leon Goretzka',6],['Hakan Çalhanoğlu',8],['Henrikh Mkhitaryan',6]],
   ATT:[['Erling Haaland',10],['Kylian Mbappé',10],['Vinícius Júnior',9],['Harry Kane',9],['Mohamed Salah',9],
       ['Lautaro Martínez',8],['Victor Osimhen',8],['Ousmane Dembélé',8],['Rafael Leão',7],
       ['Khvicha Kvaratskhelia',8],['Phil Foden',8],['Julian Álvarez',7],['Randal Kolo Muani',6],
       ['Marcus Rashford',6],['Darwin Núñez',6],['Serhou Guirassy',6],['Alexander Isak',8],
       ['Ollie Watkins',6],['Cody Gakpo',6],['Nicolas Jackson',6],['Gabriel Jesus',6],['Dušan Vlahović',6],
-      ['Federico Chiesa',6],['Kingsley Coman',6]]
+      ['Federico Chiesa',6],['Kingsley Coman',6],['Marcus Thuram',7]]
  },
  icons:{
   GK:[['Gianluigi Buffon',9],['Iker Casillas',9],['Petr Čech',9],['Manuel Neuer',9],['Edwin van der Sar',8],
@@ -197,6 +218,306 @@ const CATEGORY_THEMES = {
    catShort:{CRUST:'Crust',SAUCE:'Sauce',CHEESE:'Cheese',TOPPING:'Topping'}, resultView:'list'}
 };
 
+// club = the side they're most associated with (current club for actives,
+// peak/defining club for icons). nation = international side.
+const FOOTBALL_META = {
+ // --- GK pool ---
+ 'Alisson Becker':['Liverpool','Brazil'],
+ 'Ederson':['Manchester City','Brazil'],
+ 'Thibaut Courtois':['Real Madrid','Belgium'],
+ 'Marc-André ter Stegen':['Barcelona','Germany'],
+ 'Gianluigi Donnarumma':['Paris Saint-Germain','Italy'],
+ 'Emiliano Martínez':['Aston Villa','Argentina'],
+ 'Jan Oblak':['Atlético Madrid','Slovenia'],
+ 'Mike Maignan':['AC Milan','France'],
+ 'Yassine Bounou':['Al-Hilal','Morocco'],
+ 'David Raya':['Arsenal','Spain'],
+ 'André Onana':['Manchester United','Cameroon'],
+ 'Nick Pope':['Newcastle United','England'],
+ 'Bernd Leno':['Fulham','Germany'],
+ 'Robert Sánchez':['Chelsea','Spain'],
+ 'Diogo Costa':['Porto','Portugal'],
+ 'Yann Sommer':['Inter Milan','Switzerland'],
+ // --- GK icons ---
+ 'Gianluigi Buffon':['Juventus','Italy'],
+ 'Iker Casillas':['Real Madrid','Spain'],
+ 'Petr Čech':['Chelsea','Czechia'],
+ 'Manuel Neuer':['Bayern Munich','Germany'],
+ 'Edwin van der Sar':['Manchester United','Netherlands'],
+ 'Oliver Kahn':['Bayern Munich','Germany'],
+ 'José Luis Chilavert':['Vélez Sarsfield','Paraguay'],
+ 'David Seaman':['Arsenal','England'],
+ // --- DEF pool ---
+ 'Virgil van Dijk':['Liverpool','Netherlands'],
+ 'Rúben Dias':['Manchester City','Portugal'],
+ 'William Saliba':['Arsenal','France'],
+ 'Antonio Rüdiger':['Real Madrid','Germany'],
+ 'Achraf Hakimi':['Paris Saint-Germain','Morocco'],
+ 'Trent Alexander-Arnold':['Liverpool','England'],
+ 'Alphonso Davies':['Bayern Munich','Canada'],
+ 'Theo Hernández':['AC Milan','France'],
+ 'Josko Gvardiol':['Manchester City','Croatia'],
+ 'Kim Min-jae':['Bayern Munich','South Korea'],
+ 'Marquinhos':['Paris Saint-Germain','Brazil'],
+ 'Éder Militão':['Real Madrid','Brazil'],
+ 'John Stones':['Manchester City','England'],
+ 'Kyle Walker':['Manchester City','England'],
+ 'Jules Koundé':['Barcelona','France'],
+ 'Dayot Upamecano':['Bayern Munich','France'],
+ 'Manuel Akanji':['Manchester City','Switzerland'],
+ 'Ben White':['Arsenal','England'],
+ 'Cristian Romero':['Tottenham Hotspur','Argentina'],
+ 'Lisandro Martínez':['Manchester United','Argentina'],
+ 'Milan Škriniar':['Paris Saint-Germain','Slovakia'],
+ 'Gabriel Magalhães':['Arsenal','Brazil'],
+ 'Nathan Aké':['Manchester City','Netherlands'],
+ 'Reece James':['Chelsea','England'],
+ 'Alessandro Bastoni':['Inter Milan','Italy'],
+ 'Federico Dimarco':['Inter Milan','Italy'],
+ 'Nuno Mendes':['Paris Saint-Germain','Portugal'],
+ 'Raphaël Varane':['Manchester United','France'],
+ 'Pau Torres':['Aston Villa','Spain'],
+ 'Ronald Araújo':['Barcelona','Uruguay'],
+ // --- DEF icons ---
+ 'Paolo Maldini':['AC Milan','Italy'],
+ 'Franco Baresi':['AC Milan','Italy'],
+ 'Cafu':['AC Milan','Brazil'],
+ 'Roberto Carlos':['Real Madrid','Brazil'],
+ 'Sergio Ramos':['Real Madrid','Spain'],
+ 'Fabio Cannavaro':['Real Madrid','Italy'],
+ 'Ashley Cole':['Chelsea','England'],
+ 'Philipp Lahm':['Bayern Munich','Germany'],
+ // --- MID pool ---
+ 'Kevin De Bruyne':['Manchester City','Belgium'],
+ 'Jude Bellingham':['Real Madrid','England'],
+ 'Rodri':['Manchester City','Spain'],
+ 'Bukayo Saka':['Arsenal','England'],
+ 'Pedri':['Barcelona','Spain'],
+ 'Gavi':['Barcelona','Spain'],
+ 'Federico Valverde':['Real Madrid','Uruguay'],
+ 'Martin Ødegaard':['Arsenal','Norway'],
+ 'Bruno Fernandes':['Manchester United','Portugal'],
+ 'Declan Rice':['Arsenal','England'],
+ 'Vitinha':['Paris Saint-Germain','Portugal'],
+ 'Frenkie de Jong':['Barcelona','Netherlands'],
+ 'Jamal Musiala':['Bayern Munich','Germany'],
+ 'Florian Wirtz':['Bayer Leverkusen','Germany'],
+ 'Enzo Fernández':['Chelsea','Argentina'],
+ 'Moisés Caicedo':['Chelsea','Ecuador'],
+ 'Alexis Mac Allister':['Liverpool','Argentina'],
+ 'Aurélien Tchouaméni':['Real Madrid','France'],
+ 'Eduardo Camavinga':['Real Madrid','France'],
+ 'Nicolò Barella':['Inter Milan','Italy'],
+ 'Sandro Tonali':['Newcastle United','Italy'],
+ 'Ismaël Bennacer':['AC Milan','Algeria'],
+ 'Fabián Ruiz':['Paris Saint-Germain','Spain'],
+ 'Marco Verratti':['Paris Saint-Germain','Italy'],
+ 'İlkay Gündoğan':['Barcelona','Germany'],
+ 'Casemiro':['Manchester United','Brazil'],
+ 'Christian Eriksen':['Manchester United','Denmark'],
+ 'Dominik Szoboszlai':['Liverpool','Hungary'],
+ 'Joshua Kimmich':['Bayern Munich','Germany'],
+ 'Leon Goretzka':['Bayern Munich','Germany'],
+ 'Hakan Çalhanoğlu':['Inter Milan','Turkey'],
+ 'Henrikh Mkhitaryan':['Inter Milan','Armenia'],
+ // --- MID icons ---
+ 'Zinedine Zidane':['Real Madrid','France'],
+ 'Andrea Pirlo':['AC Milan','Italy'],
+ 'Xavi Hernández':['Barcelona','Spain'],
+ 'Andrés Iniesta':['Barcelona','Spain'],
+ 'Steven Gerrard':['Liverpool','England'],
+ 'Frank Lampard':['Chelsea','England'],
+ 'Michael Ballack':['Bayern Munich','Germany'],
+ 'Paul Scholes':['Manchester United','England'],
+ // --- ATT pool ---
+ 'Erling Haaland':['Manchester City','Norway'],
+ 'Kylian Mbappé':['Real Madrid','France'],
+ 'Vinícius Júnior':['Real Madrid','Brazil'],
+ 'Harry Kane':['Bayern Munich','England'],
+ 'Mohamed Salah':['Liverpool','Egypt'],
+ 'Lautaro Martínez':['Inter Milan','Argentina'],
+ 'Victor Osimhen':['Napoli','Nigeria'],
+ 'Ousmane Dembélé':['Paris Saint-Germain','France'],
+ 'Rafael Leão':['AC Milan','Portugal'],
+ 'Khvicha Kvaratskhelia':['Napoli','Georgia'],
+ 'Phil Foden':['Manchester City','England'],
+ 'Julian Álvarez':['Atlético Madrid','Argentina'],
+ 'Randal Kolo Muani':['Paris Saint-Germain','France'],
+ 'Marcus Rashford':['Manchester United','England'],
+ 'Darwin Núñez':['Liverpool','Uruguay'],
+ 'Serhou Guirassy':['Borussia Dortmund','Guinea'],
+ 'Alexander Isak':['Newcastle United','Sweden'],
+ 'Ollie Watkins':['Aston Villa','England'],
+ 'Cody Gakpo':['Liverpool','Netherlands'],
+ 'Nicolas Jackson':['Chelsea','Senegal'],
+ 'Gabriel Jesus':['Arsenal','Brazil'],
+ 'Dušan Vlahović':['Juventus','Serbia'],
+ 'Federico Chiesa':['Liverpool','Italy'],
+ 'Kingsley Coman':['Bayern Munich','France'],
+ 'Marcus Thuram':['Inter Milan','France'],
+ // --- ATT icons ---
+ 'Pelé':['Santos','Brazil'],
+ 'Diego Maradona':['Napoli','Argentina'],
+ 'Ronaldo Nazário':['Real Madrid','Brazil'],
+ 'Thierry Henry':['Arsenal','France'],
+ 'Ronaldinho':['Barcelona','Brazil'],
+ 'Zlatan Ibrahimović':['AC Milan','Sweden'],
+ 'Didier Drogba':['Chelsea','Ivory Coast'],
+ 'Alan Shearer':['Newcastle United','England']
+};
+
+// Club legends, used ONLY by the rivalry drafts so they play as all-time
+// squads. The standard 5-a-side draft keeps its current-players-plus-rare-
+// icons pool untouched.
+const FOOTBALL_LEGENDS = {
+ GK:[
+  ['Santiago Cañizares',8],['Claudio Bravo',7],['Víctor Valdés',8],['Peter Schmeichel',9],
+  ['Joe Hart',7],['Dino Zoff',9],['Walter Zenga',8],['Julio César',8],['David de Gea',8],
+  ['Jens Lehmann',8],['Hugo Lloris',8],['Thibaut Courtois',9]
+ ],
+ DEF:[
+  ['Carles Puyol',9],['Gerard Piqué',8],['Dani Alves',9],['Éric Abidal',8],
+  ['Fernando Hierro',8],['Michel Salgado',7],['Marcelo',9],['Pepe',8],
+  ['Rio Ferdinand',9],['Nemanja Vidić',9],['Gary Neville',8],['Denis Irwin',8],
+  ['Vincent Kompany',9],['Pablo Zabaleta',8],['Alessandro Nesta',9],['Javier Zanetti',9],
+  ['Marco Materazzi',7],['Tony Adams',8],['Lauren',7],['John Terry',8],['Branislav Ivanović',7],
+  ['Ledley King',8],['Kyle Naughton',5]
+ ],
+ MID:[
+  ['Luka Modrić',9],['Guti',7],['Claude Makélélé',8],['Sergio Busquets',9],
+  ['Deco',8],['Rivaldo',9],['Paul Pogba',7],['Roy Keane',9],['Ryan Giggs',9],
+  ['David Silva',9],['Yaya Touré',9],['Clarence Seedorf',9],['Gennaro Gattuso',8],
+  ['Kaká',9],['Esteban Cambiasso',8],['Wesley Sneijder',8],['Patrick Vieira',9],
+  ['Robert Pirès',8],['Cesc Fàbregas',8],['Michael Essien',8],['Eden Hazard',9],
+  ['Luka Modric',8],['Rafael van der Vaart',7],['Mousa Dembélé',7]
+ ],
+ ATT:[
+  ['Raúl',9],['Cristiano Ronaldo',10],['Karim Benzema',9],['Alfredo Di Stéfano',10],
+  ['Lionel Messi',10],['Samuel Eto\'o',9],['Luis Suárez',9],['Neymar',9],
+  ['Wayne Rooney',9],['Eric Cantona',9],['Ruud van Nistelrooy',9],['Andy Cole',8],
+  ['Sergio Agüero',10],['Carlos Tevez',8],['Andriy Shevchenko',9],['Marco van Basten',10],
+  ['Filippo Inzaghi',8],['Ronaldo Nazário',10],['Diego Milito',8],['Dennis Bergkamp',9],
+  ['Ian Wright',8],['Frank Lampard',9],['Gianfranco Zola',8],['Harry Kane',9],
+  ['Gareth Bale',9],['Jürgen Klinsmann',8]
+ ]
+};
+
+// club + nation for every legend above
+const FOOTBALL_LEGEND_META = {
+ 'Santiago Cañizares':['Real Madrid','Spain'],'Claudio Bravo':['Barcelona','Chile'],
+ 'Víctor Valdés':['Barcelona','Spain'],'Peter Schmeichel':['Manchester United','Denmark'],
+ 'Joe Hart':['Manchester City','England'],'Dino Zoff':['Inter Milan','Italy'],
+ 'Walter Zenga':['Inter Milan','Italy'],'Julio César':['Inter Milan','Brazil'],
+ 'David de Gea':['Manchester United','Spain'],'Jens Lehmann':['Arsenal','Germany'],
+ 'Hugo Lloris':['Tottenham Hotspur','France'],
+ 'Carles Puyol':['Barcelona','Spain'],'Gerard Piqué':['Barcelona','Spain'],
+ 'Dani Alves':['Barcelona','Brazil'],'Éric Abidal':['Barcelona','France'],
+ 'Fernando Hierro':['Real Madrid','Spain'],'Michel Salgado':['Real Madrid','Spain'],
+ 'Marcelo':['Real Madrid','Brazil'],'Pepe':['Real Madrid','Portugal'],
+ 'Rio Ferdinand':['Manchester United','England'],'Nemanja Vidić':['Manchester United','Serbia'],
+ 'Gary Neville':['Manchester United','England'],'Denis Irwin':['Manchester United','Ireland'],
+ 'Vincent Kompany':['Manchester City','Belgium'],'Pablo Zabaleta':['Manchester City','Argentina'],
+ 'Alessandro Nesta':['AC Milan','Italy'],'Javier Zanetti':['Inter Milan','Argentina'],
+ 'Marco Materazzi':['Inter Milan','Italy'],'Tony Adams':['Arsenal','England'],
+ 'Lauren':['Arsenal','Cameroon'],'John Terry':['Chelsea','England'],
+ 'Branislav Ivanović':['Chelsea','Serbia'],'Ledley King':['Tottenham Hotspur','England'],
+ 'Kyle Naughton':['Tottenham Hotspur','England'],
+ 'Luka Modrić':['Real Madrid','Croatia'],'Guti':['Real Madrid','Spain'],
+ 'Claude Makélélé':['Real Madrid','France'],'Sergio Busquets':['Barcelona','Spain'],
+ 'Deco':['Barcelona','Portugal'],'Rivaldo':['Barcelona','Brazil'],
+ 'Paul Pogba':['Manchester United','France'],'Roy Keane':['Manchester United','Ireland'],
+ 'Ryan Giggs':['Manchester United','Wales'],'David Silva':['Manchester City','Spain'],
+ 'Yaya Touré':['Manchester City','Ivory Coast'],'Clarence Seedorf':['AC Milan','Netherlands'],
+ 'Gennaro Gattuso':['AC Milan','Italy'],'Kaká':['AC Milan','Brazil'],
+ 'Esteban Cambiasso':['Inter Milan','Argentina'],'Wesley Sneijder':['Inter Milan','Netherlands'],
+ 'Patrick Vieira':['Arsenal','France'],'Robert Pirès':['Arsenal','France'],
+ 'Cesc Fàbregas':['Arsenal','Spain'],'Michael Essien':['Chelsea','Ghana'],
+ 'Eden Hazard':['Chelsea','Belgium'],'Luka Modric':['Tottenham Hotspur','Croatia'],
+ 'Rafael van der Vaart':['Tottenham Hotspur','Netherlands'],'Mousa Dembélé':['Tottenham Hotspur','Belgium'],
+ 'Raúl':['Real Madrid','Spain'],'Cristiano Ronaldo':['Real Madrid','Portugal'],
+ 'Karim Benzema':['Real Madrid','France'],'Alfredo Di Stéfano':['Real Madrid','Argentina'],
+ 'Lionel Messi':['Barcelona','Argentina'],"Samuel Eto'o":['Barcelona','Cameroon'],
+ 'Luis Suárez':['Barcelona','Uruguay'],'Neymar':['Barcelona','Brazil'],
+ 'Wayne Rooney':['Manchester United','England'],'Eric Cantona':['Manchester United','France'],
+ 'Ruud van Nistelrooy':['Manchester United','Netherlands'],'Andy Cole':['Manchester United','England'],
+ 'Sergio Agüero':['Manchester City','Argentina'],'Carlos Tevez':['Manchester City','Argentina'],
+ 'Andriy Shevchenko':['AC Milan','Ukraine'],'Marco van Basten':['AC Milan','Netherlands'],
+ 'Filippo Inzaghi':['AC Milan','Italy'],'Diego Milito':['Inter Milan','Argentina'],
+ 'Dennis Bergkamp':['Arsenal','Netherlands'],'Ian Wright':['Arsenal','England'],
+ 'Gianfranco Zola':['Chelsea','Italy'],'Gareth Bale':['Tottenham Hotspur','Wales'],
+ 'Jürgen Klinsmann':['Tottenham Hotspur','Germany']
+};
+
+// Kit colours for the jersey rendering on the results pitch.
+// [primary, secondary, stripe?]
+const CLUB_KITS = {
+ 'Real Madrid':['#FFFFFF','#00529F',false],
+ 'Barcelona':['#A50044','#004D98',true],
+ 'Manchester City':['#6CABDD','#1C2C5B',false],
+ 'Manchester United':['#DA291C','#000000',false],
+ 'AC Milan':['#FB090B','#000000',true],
+ 'Inter Milan':['#0068A8','#000000',true],
+ 'Arsenal':['#EF0107','#FFFFFF',false],
+ 'Chelsea':['#034694','#FFFFFF',false],
+ 'Tottenham Hotspur':['#FFFFFF','#132257',false],
+ 'Liverpool':['#C8102E','#00B2A9',false],
+ 'Bayern Munich':['#DC052D','#0066B2',false],
+ 'Paris Saint-Germain':['#004170','#DA291C',false],
+ 'Juventus':['#FFFFFF','#000000',true],
+ 'Napoli':['#12A0D7','#FFFFFF',false],
+ 'Atlético Madrid':['#CB3524','#FFFFFF',true],
+ 'Newcastle United':['#241F20','#FFFFFF',true],
+ 'Aston Villa':['#95BFE5','#670E36',false],
+ 'Borussia Dortmund':['#FDE100','#000000',false],
+ 'Bayer Leverkusen':['#E32221','#000000',false],
+ 'Porto':['#00428C','#FFFFFF',true],
+ 'Fulham':['#FFFFFF','#000000',false],
+ 'Al-Hilal':['#0E4CFD','#FFFFFF',false],
+ 'Santos':['#FFFFFF','#000000',false],
+ 'Vélez Sarsfield':['#FFFFFF','#0B4EA2',false]
+};
+function kitFor(name){
+  const club = clubOf(name);
+  return (club && CLUB_KITS[club]) || ['#F5EFE3','#2B2620',false];
+}
+
+// Rivalry drafts: same engine as the 5-a-side draft, but the pool is limited
+// to two rival clubs. Built programmatically from FOOTBALL_META so they stay
+// in sync with the player pool automatically.
+const RIVALRIES = {
+  rivals_clasico:   { name:'El Clásico Draft',      emoji:'⚡', clubs:['Real Madrid','Barcelona'] },
+  rivals_manchester:{ name:'Manchester Derby Draft',emoji:'⚡', clubs:['Manchester City','Manchester United'] },
+  rivals_milan:     { name:'Milan Derby Draft',     emoji:'⚡', clubs:['AC Milan','Inter Milan'] },
+  rivals_london:    { name:'London Derby Draft',    emoji:'⚡', clubs:['Arsenal','Chelsea','Tottenham Hotspur'] }
+};
+function buildRivalryPool(clubs){
+  const pool = {};
+  FOOTBALL_CATS.forEach(cat => {
+    const all = (FOOTBALL.pool[cat]||[])
+      .concat(FOOTBALL.icons[cat]||[])
+      .concat(FOOTBALL_LEGENDS[cat]||[]);
+    const seen = {};
+    pool[cat] = all.filter(p => {
+      if (seen[p[0]]) return false;            // a few names appear in both banks
+      const m = FOOTBALL_META[p[0]] || FOOTBALL_LEGEND_META[p[0]];
+      if (!m || clubs.indexOf(m[0]) === -1) return false;
+      seen[p[0]] = true;
+      return true;
+    }).map(p => [p[0], p[1]]);
+  });
+  return pool;
+}
+
+Object.keys(RIVALRIES).forEach(key => {
+  const rv = RIVALRIES[key];
+  CATEGORY_THEMES[key] = {
+    name: rv.name, emoji: rv.emoji, cats: FOOTBALL_CATS, required: FOOTBALL_REQUIRED,
+    pool: buildRivalryPool(rv.clubs), icons: null, rivalClubs: rv.clubs,
+    catLabel:{GK:'⚽ Goalkeeper',DEF:'⚽ Defender',MID:'⚽ Midfielder',ATT:'⚽ Attacker'},
+    catShort:{GK:'GK',DEF:'DEF',MID:'MID',ATT:'ATT'}, resultView:'pitch'
+  };
+});
+
 /* Stable numeric IDs. Assigned once in a fixed traversal order so the client
    and the server always agree on which number means which item. */
 const ITEM_BY_ID = {};
@@ -218,7 +539,10 @@ const ID_BY_NAME = {};
   });
 })();
 function itemIdFor(name, themeKey){ return ID_BY_NAME[themeKey + '|' + name]; }
+function footballMeta(name){ return FOOTBALL_META[name] || FOOTBALL_LEGEND_META[name] || null; }
+function clubOf(name){ const m = footballMeta(name); return m ? m[0] : null; }
+function nationOf(name){ const m = footballMeta(name); return m ? m[1] : null; }
 function itemById(id){ return ITEM_BY_ID[parseInt(id,10)]; }
 /* END GAME DATA */
 
-module.exports = { THEMES, FOOTBALL, FOOTBALL_CATS, FOOTBALL_REQUIRED, SANDWICH, SANDWICH_CATS, SANDWICH_REQUIRED, MOVIE, MOVIE_CATS, MOVIE_REQUIRED, PIZZA, PIZZA_CATS, PIZZA_REQUIRED, CATEGORY_THEMES, ITEM_BY_ID, ID_BY_NAME, itemIdFor, itemById };
+module.exports = { THEMES, FOOTBALL, FOOTBALL_META, FOOTBALL_LEGENDS, FOOTBALL_LEGEND_META, CLUB_KITS, kitFor, FOOTBALL_CATS, FOOTBALL_REQUIRED, SANDWICH, SANDWICH_CATS, SANDWICH_REQUIRED, MOVIE, MOVIE_CATS, MOVIE_REQUIRED, PIZZA, PIZZA_CATS, PIZZA_REQUIRED, RIVALRIES, CATEGORY_THEMES, ITEM_BY_ID, ID_BY_NAME, itemIdFor, itemById, clubOf, nationOf };

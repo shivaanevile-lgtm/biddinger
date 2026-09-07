@@ -179,6 +179,35 @@ function applyResolvedAction(room, sideIdx, type, amount){
   }
 }
 
+// Resolve "87" or a (partial) item name to a catalogue record within the
+// theme currently being played. Returns {rec} or {error}.
+function resolveItemToken(room, token){
+  const g = room.game;
+  const themeKey = (g && g.catThemeKey) || room.theme.key;
+  const t = String(token || '').trim();
+  if (!t) return { error: 'Missing item' };
+  if (/^\d+$/.test(t)) {
+    const rec = ITEM_BY_ID[parseInt(t, 10)];
+    if (!rec) return { error: `No item with id ${t}` };
+    if (rec.themeKey !== themeKey) return { error: `#${rec.id} "${rec.name}" belongs to a different theme` };
+    return { rec };
+  }
+  const lower = t.toLowerCase();
+  const all = Object.keys(ITEM_BY_ID).map(k => ITEM_BY_ID[k])
+    .filter(r => r.themeKey === themeKey && r.name.toLowerCase().includes(lower));
+  if (!all.length) return { error: `No match for "${t}" in this theme` };
+  return { rec: all[0] };
+}
+// Which side holds a given item, and where in their list.
+function findHolder(room, name){
+  const sides = sidesOf(room);
+  for (let si = 0; si < sides.length; si++) {
+    const ii = (sides[si].items || []).findIndex(it => it.name === name);
+    if (ii > -1) return { sideIdx: si, itemIdx: ii, item: sides[si].items[ii] };
+  }
+  return null;
+}
+
 function mySideIndex(room, nickname){
   if (room.hostMode === '2v2') {
     const p = room.players.find(p => p.nickname === nickname);
@@ -587,13 +616,88 @@ exports.handler = async (event) => {
             strip(g.catQueue); strip(g.itemPool);
           }
           g.queuedNotice = `#${resolved.id} ${resolved.name}${resolved.cat ? ' ('+resolved.cat+')' : ''} queued up next`;
+        } else if (cmd === 'swap') {
+          const parts = String(arg).trim().split(/\s+/).filter(Boolean);
+          if (parts.length < 2) return { status: 400, error: 'Usage: swap <id1> <id2>' };
+          const a = resolveItemToken(room, parts[0]);
+          if (a.error) return { status: 400, error: a.error };
+          const b = resolveItemToken(room, parts.slice(1).join(' '));
+          if (b.error) return { status: 400, error: b.error };
+          if (a.rec.name === b.rec.name) return { status: 400, error: `Those are the same item ("${a.rec.name}")` };
+
+          const ha = findHolder(room, a.rec.name);
+          const hb = findHolder(room, b.rec.name);
+          if (!ha) return { status: 400, error: `Nobody has drafted "${a.rec.name}" yet — there's nothing to swap.` };
+          if (!hb) return { status: 400, error: `Nobody has drafted "${b.rec.name}" yet — there's nothing to swap.` };
+          if (ha.sideIdx === hb.sideIdx) {
+            return { status: 400, error: `Both "${a.rec.name}" and "${b.rec.name}" belong to ${sideLabel(room, ha.sideIdx)} — a swap has to be between two different sides.` };
+          }
+          if (g.catThemeKey && ha.item.cat !== hb.item.cat) {
+            return { status: 400, error: `Can't swap a ${ha.item.cat} for a ${hb.item.cat} — the slots wouldn't line up. Swap within the same category.` };
+          }
+
+          // straight exchange, positions preserved
+          bidders[ha.sideIdx].items[ha.itemIdx] = hb.item;
+          bidders[hb.sideIdx].items[hb.itemIdx] = ha.item;
+          g.stealNotice = `Swapped ${a.rec.name} (${sideLabel(room, ha.sideIdx)}) for ${b.rec.name} (${sideLabel(room, hb.sideIdx)})`;
+        } else if (cmd === 'steal') {
+          if (!arg) return { status: 400, error: 'Usage: steal <id or item name>' };
+          const themeKey = g.catThemeKey || room.theme.key;
+
+          // resolve the target the same way `next` does
+          let resolved = null;
+          if (/^\d+$/.test(String(arg).trim())) {
+            const rec = ITEM_BY_ID[parseInt(String(arg).trim(), 10)];
+            if (!rec) return { status: 400, error: `No item with id ${String(arg).trim()}` };
+            if (rec.themeKey !== themeKey) return { status: 400, error: `#${rec.id} "${rec.name}" belongs to a different theme` };
+            resolved = rec;
+          } else {
+            const lower = String(arg).toLowerCase();
+            const all = Object.keys(ITEM_BY_ID).map(k => ITEM_BY_ID[k])
+              .filter(r => r.themeKey === themeKey && r.name.toLowerCase().includes(lower));
+            if (!all.length) return { status: 400, error: `No match for "${arg}" in this theme` };
+            resolved = all[0];
+          }
+
+          // who currently holds it?
+          let ownerIdx = -1, ownerItemIdx = -1;
+          bidders.forEach((side, si) => {
+            const ii = (side.items||[]).findIndex(it => it.name === resolved.name);
+            if (ii > -1) { ownerIdx = si; ownerItemIdx = ii; }
+          });
+
+          if (ownerIdx === -1) {
+            return { status: 400, error: `Nobody has drafted "${resolved.name}" yet — there's nothing to steal. Use "next ${resolved.id}" to put it up for auction instead.` };
+          }
+          if (ownerIdx === myIdx) {
+            return { status: 400, error: `You already have "${resolved.name}" — you can't steal from yourself.` };
+          }
+
+          // don't let a steal overfill a category and break the 5-item shape
+          const stolen = bidders[ownerIdx].items[ownerItemIdx];
+          if (g.catThemeKey && stolen.cat) {
+            const ct = CATEGORY_THEMES[g.catThemeKey];
+            const have = (bidders[myIdx].items||[]).filter(it => it.cat === stolen.cat).length;
+            if (have >= ct.required[stolen.cat]) {
+              return { status: 400, error: `Your ${stolen.cat} slot${ct.required[stolen.cat]>1?'s are':' is'} already full (${have}/${ct.required[stolen.cat]}) — stealing "${resolved.name}" would leave you over the limit.` };
+            }
+          } else if (!g.catThemeKey) {
+            if ((bidders[myIdx].items||[]).length >= 5) {
+              return { status: 400, error: `You already have 5 items — stealing "${resolved.name}" would put you over the cap.` };
+            }
+          }
+
+          bidders[ownerIdx].items.splice(ownerItemIdx, 1);
+          bidders[myIdx].items.push(stolen);
+          g.stealNotice = `Stole #${resolved.id} ${resolved.name} from ${sideLabel(room, ownerIdx)}`;
         } else {
           return { status: 400, error: `Unknown command: ${cmd}` };
         }
       });
       if (result.error) return json(result.status, { error: result.error });
-      const notice = result.room && result.room.game ? result.room.game.queuedNotice : null;
-      if (result.room && result.room.game) delete result.room.game.queuedNotice;
+      const g2 = result.room && result.room.game;
+      const notice = g2 ? (g2.queuedNotice || g2.stealNotice || null) : null;
+      if (g2) { delete g2.queuedNotice; delete g2.stealNotice; }
       return json(200, { room: result.room, notice });
     }
 

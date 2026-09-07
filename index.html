@@ -227,6 +227,12 @@
 
     <div class="section-label" id="mode-select-label">how do you want to play</div>
     <div class="card" id="mode-select-card">
+      <div class="section-label" style="margin-top:0;">AI difficulty</div>
+      <div class="btn-row" style="margin-bottom:10px;">
+        <button class="btn btn-secondary" id="btn-diff-easy">Easy</button>
+        <button class="btn btn-primary" id="btn-diff-normal">Normal</button>
+        <button class="btn btn-secondary" id="btn-diff-hard">Hard</button>
+      </div>
       <button class="btn btn-primary" id="btn-practice">🤖 Practice vs AI</button>
       <button class="btn btn-secondary" id="btn-create-room">🌐 Create Online Room</button>
       <button class="btn btn-secondary" id="btn-join-room">🔑 Join Room with Code</button>
@@ -336,7 +342,7 @@
     </div>
     <div id="debug-log-content">Type a command below.</div>
     <div class="debug-cmd-row">
-      <input type="text" id="debug-cmd-input" placeholder="list · next 102 · money 100">
+      <input type="text" id="debug-cmd-input" placeholder="list · steal 87 · swap 12 87">
       <button id="btn-debug-run">Run</button>
     </div>
   </div>
@@ -422,6 +428,13 @@ tvshows:{emoji:'📺',name:'Best TV Shows',items:[
  ['Stranger Things',6],['Seinfeld',6],['The Crown',5],['Better Call Saul',7],['Chernobyl',6],['Fargo',6],
  ['Succession',7],['The Bear',6],['True Detective',6],['Cheers',4],['Parks and Recreation',5],
  ['Curb Your Enthusiasm',5],['The West Wing',5],['Ted Lasso',5]]},
+videogames:{emoji:'🎮',name:'Best Video Games',items:[
+ ['The Legend of Zelda: Breath of the Wild',9],['Elden Ring',9],['Minecraft',8],['Red Dead Redemption 2',9],
+ ['The Witcher 3',9],['Super Mario Odyssey',8],['Portal 2',8],['Grand Theft Auto V',8],
+ ['Dark Souls',8],['Half-Life 2',8],['Tetris',7],['Fortnite',6],['Stardew Valley',7],
+ ['Hollow Knight',8],['God of War',8],['Among Us',5],['Halo: Combat Evolved',8],
+ ['Celeste',7],['Rocket League',7],['Animal Crossing: New Horizons',6],['Doom Eternal',7],
+ ['Balatro',7]]},
 music:{emoji:'🎤',name:'Best Music Artists',items:[
  ['The Beatles',9],['Beyoncé',8],['Michael Jackson',9],['Taylor Swift',8],['Kendrick Lamar',8],['Queen',8],
  ['Stevie Wonder',8],['Adele',6],['Prince',8],['Rihanna',6],['Radiohead',6],['Bob Dylan',7],
@@ -511,6 +524,26 @@ const MOVIE = {
       ['A bustling 1920s speakeasy',6],['The Wild West',6],['A dystopian megacity',7]]
  }
 };
+const PIZZA = {
+ pool:{
+  CRUST:[['Neapolitan thin crust',8],['New York foldable slice',8],['Deep dish',7],['Stuffed crust',7],
+      ['Sourdough crust',7],['Detroit-style pan',7],['Cauliflower crust',3],['Thin cracker crust',5],
+      ['Garlic butter crust',6],['Wood-fired charred crust',8]],
+  SAUCE:[['San Marzano tomato',8],['Garlic white sauce',7],['Spicy arrabbiata',7],['Basil pesto',7],
+      ['BBQ sauce',5],['Vodka sauce',7],['Hot honey drizzle',7],['Plain canned tomato',3],
+      ['Alfredo',5],['Olive oil and garlic (no sauce)',5]],
+  CHEESE:[['Fresh buffalo mozzarella',9],['Low-moisture mozzarella',7],['Burrata',8],['Four-cheese blend',8],
+      ['Smoked provolone',7],['Ricotta dollops',6],['Parmesan',6],['Vegan cheese',3],
+      ['Extra cheese, double portion',7],['Goat cheese',6]],
+  TOPPING:[['Pepperoni',8],['Italian sausage',7],['Fresh basil',6],['Prosciutto',8],['Mushrooms',6],
+      ['Caramelized onions',6],['Hot soppressata',8],['Bell peppers',4],['Black olives',4],
+      ['Pineapple',4],['Jalapeños',6],['Bacon',7],['Artichoke hearts',5],['Anchovies',3],
+      ['Arugula',5],['Cherry tomatoes',5],['Roasted garlic',6],['Ground beef',5]]
+ }
+};
+const PIZZA_CATS = ['CRUST','SAUCE','CHEESE','TOPPING'];
+const PIZZA_REQUIRED = {CRUST:1,SAUCE:1,CHEESE:1,TOPPING:2};
+
 const MOVIE_CATS = ['GENRE','DIRECTOR','ACTOR','SETTING'];
 const MOVIE_REQUIRED = {GENRE:1,DIRECTOR:1,ACTOR:2,SETTING:1};
 
@@ -525,7 +558,10 @@ const CATEGORY_THEMES = {
    catShort:{BREAD:'Bread',MEAT:'Meat',CHEESE:'Cheese',CONDIMENT:'Condiment',TOPPING:'Topping'}, resultView:'list'},
  movie:{name:'Build Your Perfect Movie', emoji:'🎬', cats:MOVIE_CATS, required:MOVIE_REQUIRED, pool:MOVIE.pool, icons:null,
    catLabel:{GENRE:'🎭 Genre',DIRECTOR:'🎥 Director',ACTOR:'⭐ Actor',SETTING:'🌍 Setting'},
-   catShort:{GENRE:'Genre',DIRECTOR:'Director',ACTOR:'Actor',SETTING:'Setting'}, resultView:'list'}
+   catShort:{GENRE:'Genre',DIRECTOR:'Director',ACTOR:'Actor',SETTING:'Setting'}, resultView:'list'},
+ pizza:{name:'Build A Pizza', emoji:'🍕', cats:PIZZA_CATS, required:PIZZA_REQUIRED, pool:PIZZA.pool, icons:null,
+   catLabel:{CRUST:'🥖 Crust',SAUCE:'🥫 Sauce',CHEESE:'🧀 Cheese',TOPPING:'🍅 Topping'},
+   catShort:{CRUST:'Crust',SAUCE:'Sauce',CHEESE:'Cheese',TOPPING:'Topping'}, resultView:'list'}
 };
 
 /* Stable numeric IDs. Assigned once in a fixed traversal order so the client
@@ -537,7 +573,7 @@ const ID_BY_NAME = {};
   const add = (name, r, themeKey, cat) => {
     n++;
     ITEM_BY_ID[n] = { id:n, name, r, themeKey, cat };
-    ID_BY_NAME[name] = n;
+    ID_BY_NAME[themeKey + '|' + name] = n;
   };
   Object.keys(THEMES).forEach(k => THEMES[k].items.forEach(it => add(it[0], it[1], k, null)));
   Object.keys(CATEGORY_THEMES).forEach(k => {
@@ -548,7 +584,7 @@ const ID_BY_NAME = {};
     });
   });
 })();
-function itemIdFor(name){ return ID_BY_NAME[name]; }
+function itemIdFor(name, themeKey){ return ID_BY_NAME[themeKey + '|' + name]; }
 function itemById(id){ return ITEM_BY_ID[parseInt(id,10)]; }
 /* END GAME DATA */
 
@@ -688,6 +724,18 @@ $('btn-create-room').onclick = ()=>{
   goNickname('choose');
 };
 $('btn-join-room').onclick = ()=> goNickname('join');
+App.difficulty = 'normal';
+function markDifficulty(d){
+  App.difficulty = d;
+  ['easy','normal','hard'].forEach(k=>{
+    $('btn-diff-'+k).classList.toggle('btn-primary', d===k);
+    $('btn-diff-'+k).classList.toggle('btn-secondary', d!==k);
+  });
+}
+$('btn-diff-easy').onclick   = ()=>{ markDifficulty('easy');   sndClick(); };
+$('btn-diff-normal').onclick = ()=>{ markDifficulty('normal'); sndClick(); };
+$('btn-diff-hard').onclick   = ()=>{ markDifficulty('hard');   sndClick(); };
+
 $('btn-practice').onclick = ()=>{
   if(!App.themeKey){ alert('Pick a theme first!'); return; }
   App.mode='practice';
@@ -865,6 +913,7 @@ function startPracticeGame(){
   const catKey = theme.categoryTheme || null;
   const P = {
     catThemeKey: catKey,       // null (flat theme) or a CATEGORY_THEMES key
+    difficulty: App.difficulty || 'normal',
     themeName: theme.name, themeEmoji: theme.emoji,
     players: [
       {nick:'You', budget:20, items:[], human:true},
@@ -1114,6 +1163,18 @@ function humanClaim(amountStr){
 }
 
 /* ============ AI LOGIC ============ */
+// How hard the AI plays. ceilingMult scales what it's willing to spend;
+// disinterest* controls how readily it walks away from weak items.
+// Because the judge scores by AVERAGE item rating, being picky is itself a
+// winning strategy — an AI that declines junk leaves the junk for its
+// opponent. So difficulty is mostly about SELECTIVITY, not raw spending:
+// Easy grabs almost anything (and drags its own average down), Hard walks
+// away from mediocre lots and pays up for the genuinely good ones.
+const AI_DIFFICULTY = {
+  easy:   { ceilingMult: 0.75, disinterestBelow: 2, disinterestStep: 0.05, useLearning: false },
+  normal: { ceilingMult: 1.00, disinterestBelow: 4, disinterestStep: 0.08, useLearning: true  },
+  hard:   { ceilingMult: 1.45, disinterestBelow: 6, disinterestStep: 0.13, useLearning: true  }
+};
 let aiPrefsCache = {};
 async function fetchAiPref(key){
   if(aiPrefsCache[key]!==undefined) return aiPrefsCache[key];
@@ -1134,14 +1195,15 @@ async function aiTakeTurn(){
   if(ai.budget < nextMin){ aiPass(); return; }
 
   const totalRemaining = 5 - ai.items.length;       // includes this pick
+  const D = AI_DIFFICULTY[P.difficulty] || AI_DIFFICULTY.normal;
 
   // Genuine disinterest in weak items — without this the ceiling math always
   // clears a $1 opening bid, so the AI contested (and usually won) literally
   // everything regardless of quality. Below-average items get a real chance
   // of a flat pass, scaling down as picks run low (never on the final pick,
   // where the existing aggressive end-game behavior still applies).
-  if(totalRemaining > 1 && P.currentLot.r <= 4){
-    const disinterest = Math.min(0.6, (5 - P.currentLot.r) * 0.08) * (totalRemaining / 5);
+  if(totalRemaining > 1 && P.currentLot.r <= D.disinterestBelow){
+    const disinterest = Math.min(0.6, (D.disinterestBelow + 1 - P.currentLot.r) * D.disinterestStep) * (totalRemaining / 5);
     if(Math.random() < disinterest){ aiPass(); return; }
   }
 
@@ -1156,10 +1218,10 @@ async function aiTakeTurn(){
   }
   const ratingFactor = 0.67 + (P.currentLot.r-1)/9*(1.33-0.67);
   const affordableCeiling = Math.max(0, ai.budget - reserve);
-  const organicCeiling = Math.min(affordableCeiling, Math.round(baseFrac*20*ratingFactor));
+  const organicCeiling = Math.min(affordableCeiling, Math.round(baseFrac*20*ratingFactor*D.ceilingMult));
 
   const key = (P.currentLot.cat||P.themeName)+'::'+P.currentLot.name;
-  const humanAvg = await fetchAiPref(key);
+  const humanAvg = D.useLearning ? await fetchAiPref(key) : null;
   let ceiling = organicCeiling;
   if(humanAvg){
     // learned "market price" can nudge willingness up, but a single outlier bid
@@ -1521,10 +1583,11 @@ function renderHostPicker(room){
     : 'choose the next lot';
   const list = $('host-pick-list');
   if(!opts.length){ list.innerHTML = '<div class="waiting-note">Loading options…</div>'; return; }
-  const sorted = opts.slice().sort((a,b)=>(itemIdFor(a.name)||0)-(itemIdFor(b.name)||0));
+  const tk = room.theme.key;
+  const sorted = opts.slice().sort((a,b)=>(itemIdFor(a.name,tk)||0)-(itemIdFor(b.name,tk)||0));
   list.innerHTML = `<div class="pick-count">${sorted.length} still available — tap one to put it up</div>` +
     sorted.map(o=>`<div class="pick-row" data-name="${escapeHtml(o.name)}">
-      <span class="pname"><span class="pid">#${itemIdFor(o.name)||'?'}</span>${escapeHtml(o.name)}</span>
+      <span class="pname"><span class="pid">#${itemIdFor(o.name,tk)||'?'}</span>${escapeHtml(o.name)}</span>
       <span class="prate">${o.r}/10</span></div>`).join('');
   list.querySelectorAll('.pick-row').forEach(el=>{
     el.onclick = ()=>{
@@ -1817,7 +1880,8 @@ function listCurrentCategory(){
     header = `${themeName} — ${entries.length} left in the pool`;
   }
 
-  const withIds = e => ({ id: itemIdFor(e[0]) || 0, name: e[0], r: e[1] });
+  const idTheme = catThemeKey || (App.mode==='practice' ? App.themeKey : (App.lastRoom && App.lastRoom.theme.key));
+  const withIds = e => ({ id: itemIdFor(e[0], idTheme) || 0, name: e[0], r: e[1] });
   const avail = entries.filter(e=>!draftedSet.has(e[0])).map(withIds).sort((a,b)=>a.id-b.id);
   const taken = entries.filter(e=>draftedSet.has(e[0])).map(withIds).sort((a,b)=>a.id-b.id);
   debugLog(header + '  —  use: next <id>');
@@ -1841,12 +1905,35 @@ function runDebugCommand(raw){
   const rest = parts.slice(1).join(' ');
   if(cmd==='list' || cmd==='items'){ listCurrentCategory(); return; }
   if(cmd==='help'){
-    debugLog('list · next <id> · money <amt> [nickname] · money+ <amt> [nickname] · state');
+    debugLog('list · next <id> · steal <id> · swap <id1> <id2> · money <amt> [nickname] · money+ <amt> [nickname] · state');
     return;
   }
   if(App.mode==='practice') runDebugCommandPractice(cmd, rest);
   else if(App.mode==='online') runDebugCommandOnline(cmd, rest);
   else debugLog('No active game — start a Practice game or online room first.');
+}
+function resolveTokenPractice(P, token){
+  const themeKey = P.catThemeKey || App.themeKey;
+  const t = String(token||'').trim();
+  if(!t) return { error:'Missing item' };
+  if(/^\d+$/.test(t)){
+    const rec = itemById(t);
+    if(!rec) return { error:`No item with id ${t}.` };
+    if(rec.themeKey !== themeKey) return { error:`#${rec.id} "${rec.name}" belongs to a different theme.` };
+    return { rec };
+  }
+  const lower = t.toLowerCase();
+  const all = Object.keys(ITEM_BY_ID).map(k=>ITEM_BY_ID[k])
+    .filter(r=>r.themeKey===themeKey && r.name.toLowerCase().includes(lower));
+  if(!all.length) return { error:`No match for "${t}" in this theme.` };
+  return { rec: all[0] };
+}
+function findHolderPractice(P, name){
+  for(let si=0; si<P.players.length; si++){
+    const ii = P.players[si].items.findIndex(it=>it.name===name);
+    if(ii>-1) return { sideIdx:si, itemIdx:ii, item:P.players[si].items[ii] };
+  }
+  return null;
 }
 function runDebugCommandPractice(cmd, rest){
   const P = App.practice;
@@ -1895,6 +1982,61 @@ function runDebugCommandPractice(cmd, rest){
       strip(P.candidates); strip(P.itemPool);
     }
     debugLog(`#${resolved.id} ${resolved.name}${resolved.cat?' ('+resolved.cat+')':''} queued up next.`);
+  } else if(cmd==='swap'){
+    const parts = rest.trim().split(/\s+/).filter(Boolean);
+    if(parts.length < 2){ debugLog('Usage: swap <id1> <id2>'); return; }
+    const a = resolveTokenPractice(P, parts[0]);
+    if(a.error){ debugLog(a.error); return; }
+    const b = resolveTokenPractice(P, parts.slice(1).join(' '));
+    if(b.error){ debugLog(b.error); return; }
+    if(a.rec.name === b.rec.name){ debugLog(`Those are the same item ("${a.rec.name}").`); return; }
+    const ha = findHolderPractice(P, a.rec.name);
+    const hb = findHolderPractice(P, b.rec.name);
+    if(!ha){ debugLog(`Nobody has drafted "${a.rec.name}" yet — nothing to swap.`); return; }
+    if(!hb){ debugLog(`Nobody has drafted "${b.rec.name}" yet — nothing to swap.`); return; }
+    if(ha.sideIdx === hb.sideIdx){ debugLog(`Both "${a.rec.name}" and "${b.rec.name}" belong to ${P.players[ha.sideIdx].nick} — a swap has to be between two different sides.`); return; }
+    if(P.catThemeKey && ha.item.cat !== hb.item.cat){ debugLog(`Can't swap a ${ha.item.cat} for a ${hb.item.cat} — swap within the same category.`); return; }
+    P.players[ha.sideIdx].items[ha.itemIdx] = hb.item;
+    P.players[hb.sideIdx].items[hb.itemIdx] = ha.item;
+    debugLog(`Swapped ${a.rec.name} (${P.players[ha.sideIdx].nick}) for ${b.rec.name} (${P.players[hb.sideIdx].nick}).`);
+    if(P.currentLot) renderPracticeDraft();
+  } else if(cmd==='steal'){
+    if(!rest){ debugLog('Usage: steal <id or item name>'); return; }
+    const themeKey = P.catThemeKey || App.themeKey;
+    let resolved = null;
+    if(/^\d+$/.test(rest.trim())){
+      const rec = itemById(rest.trim());
+      if(!rec){ debugLog(`No item with id ${rest.trim()}.`); return; }
+      if(rec.themeKey !== themeKey){ debugLog(`#${rec.id} "${rec.name}" belongs to a different theme.`); return; }
+      resolved = rec;
+    } else {
+      const lower = rest.toLowerCase();
+      const all = Object.keys(ITEM_BY_ID).map(k=>ITEM_BY_ID[k])
+        .filter(r=>r.themeKey===themeKey && r.name.toLowerCase().includes(lower));
+      if(!all.length){ debugLog(`No match for "${rest}" in this theme.`); return; }
+      resolved = all[0];
+    }
+    let ownerIdx = -1, ownerItemIdx = -1;
+    P.players.forEach((pl, si)=>{
+      const ii = pl.items.findIndex(it=>it.name===resolved.name);
+      if(ii>-1){ ownerIdx=si; ownerItemIdx=ii; }
+    });
+    if(ownerIdx===-1){ debugLog(`Nobody has drafted "${resolved.name}" yet — nothing to steal. Try "next ${resolved.id}" to put it up instead.`); return; }
+    if(ownerIdx===0){ debugLog(`You already have "${resolved.name}" — you can't steal from yourself.`); return; }
+    const stolen = P.players[ownerIdx].items[ownerItemIdx];
+    if(P.catThemeKey && stolen.cat){
+      const ct = CATEGORY_THEMES[P.catThemeKey];
+      const have = P.players[0].items.filter(it=>it.cat===stolen.cat).length;
+      if(have >= ct.required[stolen.cat]){
+        debugLog(`Your ${stolen.cat} slot${ct.required[stolen.cat]>1?'s are':' is'} already full (${have}/${ct.required[stolen.cat]}) — stealing "${resolved.name}" would put you over.`); return;
+      }
+    } else if(!P.catThemeKey && P.players[0].items.length>=5){
+      debugLog(`You already have 5 items — stealing "${resolved.name}" would put you over the cap.`); return;
+    }
+    P.players[ownerIdx].items.splice(ownerItemIdx,1);
+    P.players[0].items.push(stolen);
+    debugLog(`Stole #${resolved.id} ${resolved.name} from ${P.players[ownerIdx].nick}.`);
+    if(P.currentLot) renderPracticeDraft();
   } else if(cmd==='state'){
     debugLog(`Budget $${P.players[0].budget} · items: ${P.players[0].items.map(i=>i.name).join(', ')||'none'} · current lot: ${P.currentLot?P.currentLot.name:'none'}`);
   } else {
@@ -1902,7 +2044,7 @@ function runDebugCommandPractice(cmd, rest){
   }
 }
 async function runDebugCommandOnline(cmd, rest){
-  if(!['money','money+','next','state'].includes(cmd)){ debugLog(`Unknown command "${cmd}". Type "help".`); return; }
+  if(!['money','money+','next','steal','swap','state'].includes(cmd)){ debugLog(`Unknown command "${cmd}". Type "help".`); return; }
   if(cmd==='state'){
     try{ const data = await api('state', {}); debugLog(JSON.stringify(data.room)); }
     catch(e){ debugLog(`state failed: ${e.message}`); }

@@ -195,6 +195,13 @@
   .judgment-card h2{ margin:0; font-size:21px; }
   .pill{ font-size:11.5px; font-weight:700; padding:4px 11px; border-radius:20px; background:var(--green); color:#fff; white-space:nowrap; }
   .pill.tie{ background:var(--ink-soft); }
+  .duel-head{ font-family:Georgia,serif; font-weight:700; font-size:14px; margin:12px 0 6px; padding-top:10px; border-top:1px solid var(--line); }
+  .duel-row{ display:flex; align-items:center; gap:6px; font-size:12px; padding:4px 0; border-bottom:1px solid var(--line); }
+  .duel-side{ flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--ink-soft); }
+  .duel-side.right{ text-align:right; }
+  .duel-side.won{ color:var(--ink); font-weight:600; }
+  .duel-mid{ font-size:10.5px; color:var(--ink-soft); white-space:nowrap; }
+  .duel-foot{ font-size:11.5px; color:var(--ink-soft); margin-top:7px; font-style:italic; }
   .judgment-text{ font-size:14.5px; line-height:1.55; color:var(--ink); }
 </style>
 </head>
@@ -219,10 +226,20 @@
     <div class="section-label">or a position draft &mdash; one from each category</div>
     <div class="theme-grid" id="theme-grid-cat"></div>
 
+    <div class="section-label">⚡ rivalry drafts &mdash; two clubs, one squad</div>
+    <div class="theme-grid" id="theme-grid-rivals"></div>
+
     <div class="card" id="custom-theme-card">
       <div style="font-weight:700; margin-bottom:8px;">✏️ Or type your own</div>
-      <input type="text" id="custom-theme-input" placeholder="e.g. Coffee Shop, Road Trip, Treehouse" maxlength="40">
-      <button class="btn btn-secondary" id="btn-use-custom">Use this theme</button>
+      <input type="text" id="custom-theme-input" placeholder="e.g. Treehouse, Road Trip, Cursed Items" maxlength="40">
+      <div class="btn-row" style="margin-top:10px;">
+        <button class="btn btn-secondary" id="btn-use-custom-space">🏠 Kit out a place</button>
+        <button class="btn btn-secondary" id="btn-use-custom-things">📋 Rank the things</button>
+      </div>
+      <div style="font-size:11.5px; color:var(--ink-soft); margin-top:7px; line-height:1.45;">
+        <b>Kit out a place</b> bids on what goes <i>inside</i> it (TV, mini fridge, zipline).<br>
+        <b>Rank the things</b> bids on versions of the thing itself.
+      </div>
     </div>
 
     <div class="section-label" id="mode-select-label">how do you want to play</div>
@@ -449,12 +466,33 @@ const CUSTOM_FEAT = ['{T} with a secret menu','{T} signed by its creator','{T} w
 const CUSTOM_FILLER = ['A basic {t} starter kit','A gently used {t}','An entry-level {t}','A {t} sample pack',
  'A no-frills {t}','A budget {t}','A secondhand {t}','A travel-size {t}'];
 
+// For a custom theme that's a PLACE you're kitting out, the interesting items
+// are the things that go IN it — not variations of the place itself. This is a
+// generic amenity bank (the generator is offline and can't know what a
+// "treehouse" specifically contains, so these are chosen to suit any space).
+const CUSTOM_SPACE_ITEMS = [
+ ['A 65-inch flat-screen TV',8],['A full gaming setup',8],['A mini fridge stocked with drinks',6],
+ ['String lights',4],['A zipline off the side',7],['A projector and screen',7],
+ ['Surround sound speakers',6],['A bean bag pit',5],['A hammock',4],
+ ['Wi-Fi that never drops',7],['Air conditioning',7],['A wood stove',6],
+ ['A skylight',6],['A rope ladder',3],['A secret trapdoor entrance',7],
+ ['A snack bar counter',5],['A coffee machine',5],['A record player',5],
+ ['Blackout curtains',4],['Heated floors',6],['A telescope',5],
+ ['A bookshelf wall',5],['Neon signage',5],['A pull-out sofa bed',5],
+ ['Solar panels on the roof',6],['A pizza oven',7],['A dartboard',4],
+ ['A pool table',7],['An arcade cabinet',7],['A cozy reading nook',5],
+ ['Panoramic windows',7],['A hot tub',8],['A whiteboard wall',3],
+ ['A drinks fridge with a glass door',6],['Motion-sensor lighting',4],
+ ['A hidden storage compartment',5],['A spiral staircase',6],['A balcony',7],
+ ['Bunk beds',4],['A charging station for every device',5]
+];
+
 const FOOTBALL = {
  pool:{
   GK:[['Alisson Becker',9],['Ederson',8],['Thibaut Courtois',9],['Marc-André ter Stegen',8],
       ['Gianluigi Donnarumma',8],['Emiliano Martínez',8],['Jan Oblak',8],['Mike Maignan',8],
       ['Yassine Bounou',7],['David Raya',7],['André Onana',7],['Nick Pope',7],['Bernd Leno',6],
-      ['Robert Sánchez',6],['Diogo Costa',7]],
+      ['Robert Sánchez',6],['Diogo Costa',7],['Yann Sommer',7]],
   DEF:[['Virgil van Dijk',9],['Rúben Dias',9],['William Saliba',8],['Antonio Rüdiger',8],['Achraf Hakimi',8],
       ['Trent Alexander-Arnold',8],['Alphonso Davies',8],['Theo Hernández',8],['Josko Gvardiol',8],
       ['Kim Min-jae',7],['Marquinhos',8],['Éder Militão',7],['John Stones',7],['Kyle Walker',7],
@@ -468,13 +506,13 @@ const FOOTBALL = {
       ['Moisés Caicedo',7],['Alexis Mac Allister',7],['Aurélien Tchouaméni',7],['Eduardo Camavinga',7],
       ['Nicolò Barella',7],['Sandro Tonali',7],['Ismaël Bennacer',6],['Fabián Ruiz',6],['Marco Verratti',7],
       ['İlkay Gündoğan',7],['Casemiro',7],['Christian Eriksen',6],['Dominik Szoboszlai',7],
-      ['Joshua Kimmich',8],['Leon Goretzka',6]],
+      ['Joshua Kimmich',8],['Leon Goretzka',6],['Hakan Çalhanoğlu',8],['Henrikh Mkhitaryan',6]],
   ATT:[['Erling Haaland',10],['Kylian Mbappé',10],['Vinícius Júnior',9],['Harry Kane',9],['Mohamed Salah',9],
       ['Lautaro Martínez',8],['Victor Osimhen',8],['Ousmane Dembélé',8],['Rafael Leão',7],
       ['Khvicha Kvaratskhelia',8],['Phil Foden',8],['Julian Álvarez',7],['Randal Kolo Muani',6],
       ['Marcus Rashford',6],['Darwin Núñez',6],['Serhou Guirassy',6],['Alexander Isak',8],
       ['Ollie Watkins',6],['Cody Gakpo',6],['Nicolas Jackson',6],['Gabriel Jesus',6],['Dušan Vlahović',6],
-      ['Federico Chiesa',6],['Kingsley Coman',6]]
+      ['Federico Chiesa',6],['Kingsley Coman',6],['Marcus Thuram',7]]
  },
  icons:{
   GK:[['Gianluigi Buffon',9],['Iker Casillas',9],['Petr Čech',9],['Manuel Neuer',9],['Edwin van der Sar',8],
@@ -564,6 +602,306 @@ const CATEGORY_THEMES = {
    catShort:{CRUST:'Crust',SAUCE:'Sauce',CHEESE:'Cheese',TOPPING:'Topping'}, resultView:'list'}
 };
 
+// club = the side they're most associated with (current club for actives,
+// peak/defining club for icons). nation = international side.
+const FOOTBALL_META = {
+ // --- GK pool ---
+ 'Alisson Becker':['Liverpool','Brazil'],
+ 'Ederson':['Manchester City','Brazil'],
+ 'Thibaut Courtois':['Real Madrid','Belgium'],
+ 'Marc-André ter Stegen':['Barcelona','Germany'],
+ 'Gianluigi Donnarumma':['Paris Saint-Germain','Italy'],
+ 'Emiliano Martínez':['Aston Villa','Argentina'],
+ 'Jan Oblak':['Atlético Madrid','Slovenia'],
+ 'Mike Maignan':['AC Milan','France'],
+ 'Yassine Bounou':['Al-Hilal','Morocco'],
+ 'David Raya':['Arsenal','Spain'],
+ 'André Onana':['Manchester United','Cameroon'],
+ 'Nick Pope':['Newcastle United','England'],
+ 'Bernd Leno':['Fulham','Germany'],
+ 'Robert Sánchez':['Chelsea','Spain'],
+ 'Diogo Costa':['Porto','Portugal'],
+ 'Yann Sommer':['Inter Milan','Switzerland'],
+ // --- GK icons ---
+ 'Gianluigi Buffon':['Juventus','Italy'],
+ 'Iker Casillas':['Real Madrid','Spain'],
+ 'Petr Čech':['Chelsea','Czechia'],
+ 'Manuel Neuer':['Bayern Munich','Germany'],
+ 'Edwin van der Sar':['Manchester United','Netherlands'],
+ 'Oliver Kahn':['Bayern Munich','Germany'],
+ 'José Luis Chilavert':['Vélez Sarsfield','Paraguay'],
+ 'David Seaman':['Arsenal','England'],
+ // --- DEF pool ---
+ 'Virgil van Dijk':['Liverpool','Netherlands'],
+ 'Rúben Dias':['Manchester City','Portugal'],
+ 'William Saliba':['Arsenal','France'],
+ 'Antonio Rüdiger':['Real Madrid','Germany'],
+ 'Achraf Hakimi':['Paris Saint-Germain','Morocco'],
+ 'Trent Alexander-Arnold':['Liverpool','England'],
+ 'Alphonso Davies':['Bayern Munich','Canada'],
+ 'Theo Hernández':['AC Milan','France'],
+ 'Josko Gvardiol':['Manchester City','Croatia'],
+ 'Kim Min-jae':['Bayern Munich','South Korea'],
+ 'Marquinhos':['Paris Saint-Germain','Brazil'],
+ 'Éder Militão':['Real Madrid','Brazil'],
+ 'John Stones':['Manchester City','England'],
+ 'Kyle Walker':['Manchester City','England'],
+ 'Jules Koundé':['Barcelona','France'],
+ 'Dayot Upamecano':['Bayern Munich','France'],
+ 'Manuel Akanji':['Manchester City','Switzerland'],
+ 'Ben White':['Arsenal','England'],
+ 'Cristian Romero':['Tottenham Hotspur','Argentina'],
+ 'Lisandro Martínez':['Manchester United','Argentina'],
+ 'Milan Škriniar':['Paris Saint-Germain','Slovakia'],
+ 'Gabriel Magalhães':['Arsenal','Brazil'],
+ 'Nathan Aké':['Manchester City','Netherlands'],
+ 'Reece James':['Chelsea','England'],
+ 'Alessandro Bastoni':['Inter Milan','Italy'],
+ 'Federico Dimarco':['Inter Milan','Italy'],
+ 'Nuno Mendes':['Paris Saint-Germain','Portugal'],
+ 'Raphaël Varane':['Manchester United','France'],
+ 'Pau Torres':['Aston Villa','Spain'],
+ 'Ronald Araújo':['Barcelona','Uruguay'],
+ // --- DEF icons ---
+ 'Paolo Maldini':['AC Milan','Italy'],
+ 'Franco Baresi':['AC Milan','Italy'],
+ 'Cafu':['AC Milan','Brazil'],
+ 'Roberto Carlos':['Real Madrid','Brazil'],
+ 'Sergio Ramos':['Real Madrid','Spain'],
+ 'Fabio Cannavaro':['Real Madrid','Italy'],
+ 'Ashley Cole':['Chelsea','England'],
+ 'Philipp Lahm':['Bayern Munich','Germany'],
+ // --- MID pool ---
+ 'Kevin De Bruyne':['Manchester City','Belgium'],
+ 'Jude Bellingham':['Real Madrid','England'],
+ 'Rodri':['Manchester City','Spain'],
+ 'Bukayo Saka':['Arsenal','England'],
+ 'Pedri':['Barcelona','Spain'],
+ 'Gavi':['Barcelona','Spain'],
+ 'Federico Valverde':['Real Madrid','Uruguay'],
+ 'Martin Ødegaard':['Arsenal','Norway'],
+ 'Bruno Fernandes':['Manchester United','Portugal'],
+ 'Declan Rice':['Arsenal','England'],
+ 'Vitinha':['Paris Saint-Germain','Portugal'],
+ 'Frenkie de Jong':['Barcelona','Netherlands'],
+ 'Jamal Musiala':['Bayern Munich','Germany'],
+ 'Florian Wirtz':['Bayer Leverkusen','Germany'],
+ 'Enzo Fernández':['Chelsea','Argentina'],
+ 'Moisés Caicedo':['Chelsea','Ecuador'],
+ 'Alexis Mac Allister':['Liverpool','Argentina'],
+ 'Aurélien Tchouaméni':['Real Madrid','France'],
+ 'Eduardo Camavinga':['Real Madrid','France'],
+ 'Nicolò Barella':['Inter Milan','Italy'],
+ 'Sandro Tonali':['Newcastle United','Italy'],
+ 'Ismaël Bennacer':['AC Milan','Algeria'],
+ 'Fabián Ruiz':['Paris Saint-Germain','Spain'],
+ 'Marco Verratti':['Paris Saint-Germain','Italy'],
+ 'İlkay Gündoğan':['Barcelona','Germany'],
+ 'Casemiro':['Manchester United','Brazil'],
+ 'Christian Eriksen':['Manchester United','Denmark'],
+ 'Dominik Szoboszlai':['Liverpool','Hungary'],
+ 'Joshua Kimmich':['Bayern Munich','Germany'],
+ 'Leon Goretzka':['Bayern Munich','Germany'],
+ 'Hakan Çalhanoğlu':['Inter Milan','Turkey'],
+ 'Henrikh Mkhitaryan':['Inter Milan','Armenia'],
+ // --- MID icons ---
+ 'Zinedine Zidane':['Real Madrid','France'],
+ 'Andrea Pirlo':['AC Milan','Italy'],
+ 'Xavi Hernández':['Barcelona','Spain'],
+ 'Andrés Iniesta':['Barcelona','Spain'],
+ 'Steven Gerrard':['Liverpool','England'],
+ 'Frank Lampard':['Chelsea','England'],
+ 'Michael Ballack':['Bayern Munich','Germany'],
+ 'Paul Scholes':['Manchester United','England'],
+ // --- ATT pool ---
+ 'Erling Haaland':['Manchester City','Norway'],
+ 'Kylian Mbappé':['Real Madrid','France'],
+ 'Vinícius Júnior':['Real Madrid','Brazil'],
+ 'Harry Kane':['Bayern Munich','England'],
+ 'Mohamed Salah':['Liverpool','Egypt'],
+ 'Lautaro Martínez':['Inter Milan','Argentina'],
+ 'Victor Osimhen':['Napoli','Nigeria'],
+ 'Ousmane Dembélé':['Paris Saint-Germain','France'],
+ 'Rafael Leão':['AC Milan','Portugal'],
+ 'Khvicha Kvaratskhelia':['Napoli','Georgia'],
+ 'Phil Foden':['Manchester City','England'],
+ 'Julian Álvarez':['Atlético Madrid','Argentina'],
+ 'Randal Kolo Muani':['Paris Saint-Germain','France'],
+ 'Marcus Rashford':['Manchester United','England'],
+ 'Darwin Núñez':['Liverpool','Uruguay'],
+ 'Serhou Guirassy':['Borussia Dortmund','Guinea'],
+ 'Alexander Isak':['Newcastle United','Sweden'],
+ 'Ollie Watkins':['Aston Villa','England'],
+ 'Cody Gakpo':['Liverpool','Netherlands'],
+ 'Nicolas Jackson':['Chelsea','Senegal'],
+ 'Gabriel Jesus':['Arsenal','Brazil'],
+ 'Dušan Vlahović':['Juventus','Serbia'],
+ 'Federico Chiesa':['Liverpool','Italy'],
+ 'Kingsley Coman':['Bayern Munich','France'],
+ 'Marcus Thuram':['Inter Milan','France'],
+ // --- ATT icons ---
+ 'Pelé':['Santos','Brazil'],
+ 'Diego Maradona':['Napoli','Argentina'],
+ 'Ronaldo Nazário':['Real Madrid','Brazil'],
+ 'Thierry Henry':['Arsenal','France'],
+ 'Ronaldinho':['Barcelona','Brazil'],
+ 'Zlatan Ibrahimović':['AC Milan','Sweden'],
+ 'Didier Drogba':['Chelsea','Ivory Coast'],
+ 'Alan Shearer':['Newcastle United','England']
+};
+
+// Club legends, used ONLY by the rivalry drafts so they play as all-time
+// squads. The standard 5-a-side draft keeps its current-players-plus-rare-
+// icons pool untouched.
+const FOOTBALL_LEGENDS = {
+ GK:[
+  ['Santiago Cañizares',8],['Claudio Bravo',7],['Víctor Valdés',8],['Peter Schmeichel',9],
+  ['Joe Hart',7],['Dino Zoff',9],['Walter Zenga',8],['Julio César',8],['David de Gea',8],
+  ['Jens Lehmann',8],['Hugo Lloris',8],['Thibaut Courtois',9]
+ ],
+ DEF:[
+  ['Carles Puyol',9],['Gerard Piqué',8],['Dani Alves',9],['Éric Abidal',8],
+  ['Fernando Hierro',8],['Michel Salgado',7],['Marcelo',9],['Pepe',8],
+  ['Rio Ferdinand',9],['Nemanja Vidić',9],['Gary Neville',8],['Denis Irwin',8],
+  ['Vincent Kompany',9],['Pablo Zabaleta',8],['Alessandro Nesta',9],['Javier Zanetti',9],
+  ['Marco Materazzi',7],['Tony Adams',8],['Lauren',7],['John Terry',8],['Branislav Ivanović',7],
+  ['Ledley King',8],['Kyle Naughton',5]
+ ],
+ MID:[
+  ['Luka Modrić',9],['Guti',7],['Claude Makélélé',8],['Sergio Busquets',9],
+  ['Deco',8],['Rivaldo',9],['Paul Pogba',7],['Roy Keane',9],['Ryan Giggs',9],
+  ['David Silva',9],['Yaya Touré',9],['Clarence Seedorf',9],['Gennaro Gattuso',8],
+  ['Kaká',9],['Esteban Cambiasso',8],['Wesley Sneijder',8],['Patrick Vieira',9],
+  ['Robert Pirès',8],['Cesc Fàbregas',8],['Michael Essien',8],['Eden Hazard',9],
+  ['Luka Modric',8],['Rafael van der Vaart',7],['Mousa Dembélé',7]
+ ],
+ ATT:[
+  ['Raúl',9],['Cristiano Ronaldo',10],['Karim Benzema',9],['Alfredo Di Stéfano',10],
+  ['Lionel Messi',10],['Samuel Eto\'o',9],['Luis Suárez',9],['Neymar',9],
+  ['Wayne Rooney',9],['Eric Cantona',9],['Ruud van Nistelrooy',9],['Andy Cole',8],
+  ['Sergio Agüero',10],['Carlos Tevez',8],['Andriy Shevchenko',9],['Marco van Basten',10],
+  ['Filippo Inzaghi',8],['Ronaldo Nazário',10],['Diego Milito',8],['Dennis Bergkamp',9],
+  ['Ian Wright',8],['Frank Lampard',9],['Gianfranco Zola',8],['Harry Kane',9],
+  ['Gareth Bale',9],['Jürgen Klinsmann',8]
+ ]
+};
+
+// club + nation for every legend above
+const FOOTBALL_LEGEND_META = {
+ 'Santiago Cañizares':['Real Madrid','Spain'],'Claudio Bravo':['Barcelona','Chile'],
+ 'Víctor Valdés':['Barcelona','Spain'],'Peter Schmeichel':['Manchester United','Denmark'],
+ 'Joe Hart':['Manchester City','England'],'Dino Zoff':['Inter Milan','Italy'],
+ 'Walter Zenga':['Inter Milan','Italy'],'Julio César':['Inter Milan','Brazil'],
+ 'David de Gea':['Manchester United','Spain'],'Jens Lehmann':['Arsenal','Germany'],
+ 'Hugo Lloris':['Tottenham Hotspur','France'],
+ 'Carles Puyol':['Barcelona','Spain'],'Gerard Piqué':['Barcelona','Spain'],
+ 'Dani Alves':['Barcelona','Brazil'],'Éric Abidal':['Barcelona','France'],
+ 'Fernando Hierro':['Real Madrid','Spain'],'Michel Salgado':['Real Madrid','Spain'],
+ 'Marcelo':['Real Madrid','Brazil'],'Pepe':['Real Madrid','Portugal'],
+ 'Rio Ferdinand':['Manchester United','England'],'Nemanja Vidić':['Manchester United','Serbia'],
+ 'Gary Neville':['Manchester United','England'],'Denis Irwin':['Manchester United','Ireland'],
+ 'Vincent Kompany':['Manchester City','Belgium'],'Pablo Zabaleta':['Manchester City','Argentina'],
+ 'Alessandro Nesta':['AC Milan','Italy'],'Javier Zanetti':['Inter Milan','Argentina'],
+ 'Marco Materazzi':['Inter Milan','Italy'],'Tony Adams':['Arsenal','England'],
+ 'Lauren':['Arsenal','Cameroon'],'John Terry':['Chelsea','England'],
+ 'Branislav Ivanović':['Chelsea','Serbia'],'Ledley King':['Tottenham Hotspur','England'],
+ 'Kyle Naughton':['Tottenham Hotspur','England'],
+ 'Luka Modrić':['Real Madrid','Croatia'],'Guti':['Real Madrid','Spain'],
+ 'Claude Makélélé':['Real Madrid','France'],'Sergio Busquets':['Barcelona','Spain'],
+ 'Deco':['Barcelona','Portugal'],'Rivaldo':['Barcelona','Brazil'],
+ 'Paul Pogba':['Manchester United','France'],'Roy Keane':['Manchester United','Ireland'],
+ 'Ryan Giggs':['Manchester United','Wales'],'David Silva':['Manchester City','Spain'],
+ 'Yaya Touré':['Manchester City','Ivory Coast'],'Clarence Seedorf':['AC Milan','Netherlands'],
+ 'Gennaro Gattuso':['AC Milan','Italy'],'Kaká':['AC Milan','Brazil'],
+ 'Esteban Cambiasso':['Inter Milan','Argentina'],'Wesley Sneijder':['Inter Milan','Netherlands'],
+ 'Patrick Vieira':['Arsenal','France'],'Robert Pirès':['Arsenal','France'],
+ 'Cesc Fàbregas':['Arsenal','Spain'],'Michael Essien':['Chelsea','Ghana'],
+ 'Eden Hazard':['Chelsea','Belgium'],'Luka Modric':['Tottenham Hotspur','Croatia'],
+ 'Rafael van der Vaart':['Tottenham Hotspur','Netherlands'],'Mousa Dembélé':['Tottenham Hotspur','Belgium'],
+ 'Raúl':['Real Madrid','Spain'],'Cristiano Ronaldo':['Real Madrid','Portugal'],
+ 'Karim Benzema':['Real Madrid','France'],'Alfredo Di Stéfano':['Real Madrid','Argentina'],
+ 'Lionel Messi':['Barcelona','Argentina'],"Samuel Eto'o":['Barcelona','Cameroon'],
+ 'Luis Suárez':['Barcelona','Uruguay'],'Neymar':['Barcelona','Brazil'],
+ 'Wayne Rooney':['Manchester United','England'],'Eric Cantona':['Manchester United','France'],
+ 'Ruud van Nistelrooy':['Manchester United','Netherlands'],'Andy Cole':['Manchester United','England'],
+ 'Sergio Agüero':['Manchester City','Argentina'],'Carlos Tevez':['Manchester City','Argentina'],
+ 'Andriy Shevchenko':['AC Milan','Ukraine'],'Marco van Basten':['AC Milan','Netherlands'],
+ 'Filippo Inzaghi':['AC Milan','Italy'],'Diego Milito':['Inter Milan','Argentina'],
+ 'Dennis Bergkamp':['Arsenal','Netherlands'],'Ian Wright':['Arsenal','England'],
+ 'Gianfranco Zola':['Chelsea','Italy'],'Gareth Bale':['Tottenham Hotspur','Wales'],
+ 'Jürgen Klinsmann':['Tottenham Hotspur','Germany']
+};
+
+// Kit colours for the jersey rendering on the results pitch.
+// [primary, secondary, stripe?]
+const CLUB_KITS = {
+ 'Real Madrid':['#FFFFFF','#00529F',false],
+ 'Barcelona':['#A50044','#004D98',true],
+ 'Manchester City':['#6CABDD','#1C2C5B',false],
+ 'Manchester United':['#DA291C','#000000',false],
+ 'AC Milan':['#FB090B','#000000',true],
+ 'Inter Milan':['#0068A8','#000000',true],
+ 'Arsenal':['#EF0107','#FFFFFF',false],
+ 'Chelsea':['#034694','#FFFFFF',false],
+ 'Tottenham Hotspur':['#FFFFFF','#132257',false],
+ 'Liverpool':['#C8102E','#00B2A9',false],
+ 'Bayern Munich':['#DC052D','#0066B2',false],
+ 'Paris Saint-Germain':['#004170','#DA291C',false],
+ 'Juventus':['#FFFFFF','#000000',true],
+ 'Napoli':['#12A0D7','#FFFFFF',false],
+ 'Atlético Madrid':['#CB3524','#FFFFFF',true],
+ 'Newcastle United':['#241F20','#FFFFFF',true],
+ 'Aston Villa':['#95BFE5','#670E36',false],
+ 'Borussia Dortmund':['#FDE100','#000000',false],
+ 'Bayer Leverkusen':['#E32221','#000000',false],
+ 'Porto':['#00428C','#FFFFFF',true],
+ 'Fulham':['#FFFFFF','#000000',false],
+ 'Al-Hilal':['#0E4CFD','#FFFFFF',false],
+ 'Santos':['#FFFFFF','#000000',false],
+ 'Vélez Sarsfield':['#FFFFFF','#0B4EA2',false]
+};
+function kitFor(name){
+  const club = clubOf(name);
+  return (club && CLUB_KITS[club]) || ['#F5EFE3','#2B2620',false];
+}
+
+// Rivalry drafts: same engine as the 5-a-side draft, but the pool is limited
+// to two rival clubs. Built programmatically from FOOTBALL_META so they stay
+// in sync with the player pool automatically.
+const RIVALRIES = {
+  rivals_clasico:   { name:'El Clásico Draft',      emoji:'⚡', clubs:['Real Madrid','Barcelona'] },
+  rivals_manchester:{ name:'Manchester Derby Draft',emoji:'⚡', clubs:['Manchester City','Manchester United'] },
+  rivals_milan:     { name:'Milan Derby Draft',     emoji:'⚡', clubs:['AC Milan','Inter Milan'] },
+  rivals_london:    { name:'London Derby Draft',    emoji:'⚡', clubs:['Arsenal','Chelsea','Tottenham Hotspur'] }
+};
+function buildRivalryPool(clubs){
+  const pool = {};
+  FOOTBALL_CATS.forEach(cat => {
+    const all = (FOOTBALL.pool[cat]||[])
+      .concat(FOOTBALL.icons[cat]||[])
+      .concat(FOOTBALL_LEGENDS[cat]||[]);
+    const seen = {};
+    pool[cat] = all.filter(p => {
+      if (seen[p[0]]) return false;            // a few names appear in both banks
+      const m = FOOTBALL_META[p[0]] || FOOTBALL_LEGEND_META[p[0]];
+      if (!m || clubs.indexOf(m[0]) === -1) return false;
+      seen[p[0]] = true;
+      return true;
+    }).map(p => [p[0], p[1]]);
+  });
+  return pool;
+}
+
+Object.keys(RIVALRIES).forEach(key => {
+  const rv = RIVALRIES[key];
+  CATEGORY_THEMES[key] = {
+    name: rv.name, emoji: rv.emoji, cats: FOOTBALL_CATS, required: FOOTBALL_REQUIRED,
+    pool: buildRivalryPool(rv.clubs), icons: null, rivalClubs: rv.clubs,
+    catLabel:{GK:'⚽ Goalkeeper',DEF:'⚽ Defender',MID:'⚽ Midfielder',ATT:'⚽ Attacker'},
+    catShort:{GK:'GK',DEF:'DEF',MID:'MID',ATT:'ATT'}, resultView:'pitch'
+  };
+});
+
 /* Stable numeric IDs. Assigned once in a fixed traversal order so the client
    and the server always agree on which number means which item. */
 const ITEM_BY_ID = {};
@@ -585,6 +923,9 @@ const ID_BY_NAME = {};
   });
 })();
 function itemIdFor(name, themeKey){ return ID_BY_NAME[themeKey + '|' + name]; }
+function footballMeta(name){ return FOOTBALL_META[name] || FOOTBALL_LEGEND_META[name] || null; }
+function clubOf(name){ const m = footballMeta(name); return m ? m[0] : null; }
+function nationOf(name){ const m = footballMeta(name); return m ? m[1] : null; }
 function itemById(id){ return ITEM_BY_ID[parseInt(id,10)]; }
 /* END GAME DATA */
 
@@ -669,8 +1010,11 @@ function renderThemeGrid(){
       grid.appendChild(chip);
     });
   };
+  const catEntries = Object.entries(CATEGORY_THEMES).filter(([k])=>!RIVALRIES[k]);
+  const rivalEntries = Object.entries(CATEGORY_THEMES).filter(([k])=>!!RIVALRIES[k]);
   fill('theme-grid', Object.entries(THEMES));
-  fill('theme-grid-cat', Object.entries(CATEGORY_THEMES));
+  fill('theme-grid-cat', catEntries);
+  fill('theme-grid-rivals', rivalEntries);
 }
 function selectTheme(key){
   App.themeKey = key; App.customTheme = null;
@@ -678,25 +1022,33 @@ function selectTheme(key){
   $('custom-theme-input').value='';
   sndClick();
 }
-function useCustomTheme(){
+function useCustomTheme(mode){
   const raw = $('custom-theme-input').value.trim();
-  if(!raw) return;
-  App.customTheme = { name: raw, items: generateCustomItems(raw) };
+  if(!raw){ alert('Type a topic first.'); return; }
+  App.customTheme = { name: raw, items: generateCustomItems(raw, mode) };
   App.themeKey = 'custom';
   document.querySelectorAll('.theme-chip').forEach(c=>c.classList.remove('selected'));
   sndClick();
   $('custom-theme-input').style.borderColor='var(--rust)';
+  ['space','things'].forEach(k=>{
+    $('btn-use-custom-'+k).classList.toggle('btn-primary', k===mode);
+    $('btn-use-custom-'+k).classList.toggle('btn-secondary', k!==mode);
+  });
 }
 function titleCase(s){ return s.replace(/\w\S*/g, t=>t[0].toUpperCase()+t.slice(1)); }
-function generateCustomItems(raw){
+function generateCustomItems(raw, mode){
   const t = raw.trim(); const T = titleCase(t); const low = t.toLowerCase();
+  if(mode === 'space'){
+    // things to put IN the place, plus a couple of theme-flavoured extras
+    const picks = shuffle(CUSTOM_SPACE_ITEMS).slice(0,18).map(x=>[x[0], x[1]]);
+    picks.push([`A custom-built ${low} sign`, rnd(4,6)]);
+    picks.push([`${T} merch for visitors`, rnd(3,5)]);
+    return shuffle(picks);
+  }
   const items = [];
-  const usedAdj = shuffle(CUSTOM_ADJ).slice(0,6);
-  const usedFeat = shuffle(CUSTOM_FEAT).slice(0,7);
-  const usedFill = shuffle(CUSTOM_FILLER).slice(0,7);
-  usedAdj.forEach(tpl=> items.push([tpl.replace('{T}',T), rnd(6,9)]));
-  usedFeat.forEach(tpl=> items.push([tpl.replace('{T}',T), rnd(6,9)]));
-  usedFill.forEach(tpl=> items.push([tpl.replace('{t}',low), rnd(3,5)]));
+  shuffle(CUSTOM_ADJ).slice(0,6).forEach(tpl=> items.push([tpl.replace('{T}',T), rnd(6,9)]));
+  shuffle(CUSTOM_FEAT).slice(0,7).forEach(tpl=> items.push([tpl.replace('{T}',T), rnd(6,9)]));
+  shuffle(CUSTOM_FILLER).slice(0,7).forEach(tpl=> items.push([tpl.replace('{t}',low), rnd(3,5)]));
   return items;
 }
 function currentThemeObj(){
@@ -1170,6 +1522,11 @@ function humanClaim(amountStr){
 // opponent. So difficulty is mostly about SELECTIVITY, not raw spending:
 // Easy grabs almost anything (and drags its own average down), Hard walks
 // away from mediocre lots and pays up for the genuinely good ones.
+// How much each slot counts toward a squad's weighted rating. An attacker
+// swings the verdict more than a keeper, so where you spend actually matters.
+const POSITION_WEIGHTS = { GK:0.9, DEF:0.95, MID:1.1, ATT:1.3 };
+function weightFor(cat){ return POSITION_WEIGHTS[cat] !== undefined ? POSITION_WEIGHTS[cat] : 1; }
+
 const AI_DIFFICULTY = {
   easy:   { ceilingMult: 0.75, disinterestBelow: 2, disinterestStep: 0.05, useLearning: false },
   normal: { ceilingMult: 1.00, disinterestBelow: 4, disinterestStep: 0.08, useLearning: true  },
@@ -1633,13 +1990,47 @@ const STEAL_TPL = ["{p} got {item} for pocket change — ${a}.", "{p} walked awa
 const FREEBIE_TPL = ["{n} item{s} came home completely free.", "{n} lucky freebie{s} made it into the final collections.", "{n} pick{s} cost absolutely nothing."];
 const WIN_TPL = ["{p} built the sharper collection — {a1} average vs {a2}.", "{p} simply rated higher across the board, {a1} to {a2}.", "{p} takes it, item for item — {a1} vs {a2}."];
 const TIE_TPL = ["Dead even — both collections rate exactly {a1} on average.", "Too close to call: an even split in quality, {a1} apiece."];
+// position drafts are settled slot-by-slot, so the verdict should say so
+const WIN_H2H_TPL = ["{p} won the head-to-head {s1}–{s2}.", "Slot for slot, {p} came out ahead {s1}–{s2}.", "{p} takes it {s1}–{s2} across the five duels."];
+const WIN_H2H_WEIGHTED_TPL = ["Level at {s1}–{s2}, so it came down to where the quality sat — {p} edged it on weighted rating.", "{s1}–{s2} on duels, but {p} was stronger where it counts."];
 
-function judgeGame(playersItems){
+function judgeGame(playersItems, catThemeKey){
   const avg = items => items.length ? items.reduce((s,it)=>s+it.r,0)/items.length : 0;
   const avgs = playersItems.map(avg);
+
+  // Position drafts are judged as five head-to-head duels rather than one
+  // average, so a single superstar can't paper over a weak slot. Weighted
+  // rating (attackers count more) breaks a level tie.
+  const ct = CATEGORY_THEMES[catThemeKey];
+  if(ct && playersItems.length === 2 && playersItems.every(x=>x.length)){
+    const duels = [];
+    let w0 = 0, w1 = 0;
+    ct.cats.forEach(cat=>{
+      const a = playersItems[0].filter(it=>it.cat===cat).sort((x,y)=>y.r-x.r);
+      const b = playersItems[1].filter(it=>it.cat===cat).sort((x,y)=>y.r-x.r);
+      const n = Math.max(a.length, b.length);
+      for(let i=0;i<n;i++){
+        const ai = a[i], bi = b[i];
+        const ar = ai ? ai.r : 0, br = bi ? bi.r : 0;
+        duels.push({ cat, a: ai, b: bi, winner: ar>br ? 0 : br>ar ? 1 : null });
+      }
+    });
+    duels.forEach(d=>{
+      const wt = weightFor(d.cat);
+      w0 += (d.a ? d.a.r : 0) * wt;
+      w1 += (d.b ? d.b.r : 0) * wt;
+    });
+    const s0 = duels.filter(d=>d.winner===0).length;
+    const s1 = duels.filter(d=>d.winner===1).length;
+    let winner = null;
+    if(s0>s1) winner=0; else if(s1>s0) winner=1;
+    else if(w0>w1) winner=0; else if(w1>w0) winner=1;
+    return { avgs, winner, duels, score:[s0,s1], weighted:[w0,w1], headToHead:true };
+  }
+
   let winner = null;
   if(avgs[0]>avgs[1]) winner=0; else if(avgs[1]>avgs[0]) winner=1;
-  return {avgs, winner};
+  return {avgs, winner, headToHead:false};
 }
 function subj(nick){ return nick==='You' ? 'You' : nick; }
 function buildJudgmentParagraph(nicks, itemsArr, budgets, bidLog, j){
@@ -1666,9 +2057,16 @@ function buildJudgmentParagraph(nicks, itemsArr, budgets, bidLog, j){
     s.push(pick(FREEBIE_TPL).replace('{n}',freebies).replace(/{s}/g, freebies===1?'':'s'));
   }
   if(j.winner===null){
-    s.push(pick(TIE_TPL).replace(/{a1}/g, j.avgs[0].toFixed(1)));
+    if(j.headToHead) s.push(`Completely level — ${j.score[0]}–${j.score[1]} on duels and nothing between them on weighted rating.`);
+    else s.push(pick(TIE_TPL).replace(/{a1}/g, j.avgs[0].toFixed(1)));
   } else {
-    s.push(pick(WIN_TPL).replace('{p}',subj(nicks[j.winner])).replace('{a1}',j.avgs[j.winner].toFixed(1)).replace('{a2}',j.avgs[1-j.winner].toFixed(1)));
+    if(j.headToHead){
+      const tpl = (j.score[0]===j.score[1]) ? pick(WIN_H2H_WEIGHTED_TPL) : pick(WIN_H2H_TPL);
+      s.push(tpl.replace('{p}',subj(nicks[j.winner]))
+               .replace('{s1}',j.score[j.winner]).replace('{s2}',j.score[1-j.winner]));
+    } else {
+      s.push(pick(WIN_TPL).replace('{p}',subj(nicks[j.winner])).replace('{a1}',j.avgs[j.winner].toFixed(1)).replace('{a2}',j.avgs[1-j.winner].toFixed(1)));
+    }
   }
   return s.join(' ');
 }
@@ -1711,7 +2109,7 @@ function resultViewFor(themeKey){
 }
 function renderResults(itemsArr, nicks, budgets, bidLog, resultView, opts){
   showScreen('screen-results');
-  const j = judgeGame(itemsArr);
+  const j = judgeGame(itemsArr, opts.catThemeKey);
   $('results-title').textContent = opts.themeLabel;
   $('results-subhead').textContent = '';
 
@@ -1734,9 +2132,25 @@ function renderResults(itemsArr, nicks, budgets, bidLog, resultView, opts){
   const pillLabel = j.winner===null ? "It's a tie" : `${nicks[j.winner]} wins`;
   const pillClass = j.winner===null ? 'pill tie' : 'pill';
   const paragraph = buildJudgmentParagraph(nicks, itemsArr, budgets, bidLog, j);
+  let duelHTML = '';
+  if(j.headToHead){
+    const rows = j.duels.map(d=>{
+      const an = d.a ? d.a.name : '—', bn = d.b ? d.b.name : '—';
+      const mark = w => w===null ? '<span style="color:var(--ink-soft);">draw</span>'
+        : `<span style="color:var(--rust); font-weight:700;">${w===0?'◀':'▶'}</span>`;
+      return `<div class="duel-row">
+        <span class="duel-side${d.winner===0?' won':''}">${escapeHtml(an)} <b>${d.a?d.a.r:0}</b></span>
+        <span class="duel-mid">${catShortLabel(opts.catThemeKey, d.cat)} ${mark(d.winner)}</span>
+        <span class="duel-side right${d.winner===1?' won':''}"><b>${d.b?d.b.r:0}</b> ${escapeHtml(bn)}</span>
+      </div>`;
+    }).join('');
+    duelHTML = `<div class="duel-head">Head-to-head &mdash; ${j.score[0]}&ndash;${j.score[1]}</div>${rows}
+      <div class="duel-foot">weighted rating ${j.weighted[0].toFixed(1)} vs ${j.weighted[1].toFixed(1)}
+      <span style="opacity:.7;">(attackers count more)</span></div>`;
+  }
   const card = document.createElement('div'); card.className='judgment-card';
   card.innerHTML = `<div class="jhead"><h2 class="serif">Judgment</h2><span class="${pillClass}">${escapeHtml(pillLabel)}</span></div>
-    <div class="judgment-text">${escapeHtml(paragraph)}</div>`;
+    <div class="judgment-text">${escapeHtml(paragraph)}</div>${duelHTML}`;
   flavorWrap.appendChild(card);
 
   $('btn-rematch').classList.toggle('hidden', opts.canRematch===false);
@@ -1750,25 +2164,57 @@ function shortName(n){ const parts=n.split(' '); return parts.length>1 ? parts[p
 function renderPitchSVG(items){
   const byCat = {GK:[],DEF:[],MID:[],ATT:[]};
   items.forEach(it=>{ if(byCat[it.cat]) byCat[it.cat].push(it); });
-  const W=200,H=280;
+  const W=200,H=300;
   let svg = `<svg class="pitch" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">
     <rect x="0" y="0" width="${W}" height="${H}" fill="#4c7a5a"/>
+    <rect x="0" y="0" width="${W}" height="${H}" fill="url(#stripes)" opacity="0.06"/>
+    <defs><pattern id="stripes" width="1" height="34" patternUnits="userSpaceOnUse">
+      <rect width="1" height="17" fill="#ffffff"/></pattern></defs>
     <rect x="4" y="4" width="${W-8}" height="${H-8}" fill="none" stroke="#fff" stroke-width="2"/>
     <line x1="4" y1="${H/2}" x2="${W-4}" y2="${H/2}" stroke="#fff" stroke-width="2"/>
     <circle cx="${W/2}" cy="${H/2}" r="24" fill="none" stroke="#fff" stroke-width="2"/>
     <rect x="${W/2-40}" y="4" width="80" height="34" fill="none" stroke="#fff" stroke-width="2"/>
     <rect x="${W/2-40}" y="${H-38}" width="80" height="34" fill="none" stroke="#fff" stroke-width="2"/>
   `;
-  function dot(x,y,label,tier){
-    const fill = tier>=8 ? '#c99a3f' : '#F5EFE3';
-    svg += `<circle cx="${x}" cy="${y}" r="13" fill="${fill}" stroke="#2B2620" stroke-width="1.5"/>
-      <text x="${x}" y="${y+3}" font-size="8" text-anchor="middle" font-family="Helvetica,Arial,sans-serif" fill="#2B2620">${escapeHtml(shortName(label).slice(0,10))}</text>`;
+  // A little shirt in the player's club colours, with the rating on the back
+  // and the name underneath.
+  function jersey(x, y, item, isKeeper){
+    const kit = kitFor(item.name);
+    const primary = isKeeper ? '#2fbf71' : kit[0];
+    const secondary = isKeeper ? '#166b3d' : kit[1];
+    const striped = isKeeper ? false : kit[2];
+    const w = 26, h = 24, uid = 'clip'+Math.random().toString(36).slice(2,8);
+    const left = x - w/2, top = y - h/2;
+    // body + sleeves
+    const body = `M${left+5},${top+4} L${left+5},${top+h} L${left+w-5},${top+h} L${left+w-5},${top+4} Z`;
+    const lSleeve = `M${left+5},${top+4} L${left-1},${top+9} L${left+2},${top+15} L${left+5},${top+12} Z`;
+    const rSleeve = `M${left+w-5},${top+4} L${left+w+1},${top+9} L${left+w-2},${top+15} L${left+w-5},${top+12} Z`;
+    svg += `<defs><clipPath id="${uid}"><path d="${body}"/></clipPath></defs>`;
+    svg += `<path d="${body}" fill="${primary}" stroke="#1a1a1a" stroke-width="1"/>`;
+    if(striped){
+      for(let i=0;i<3;i++){
+        svg += `<rect x="${left+6+i*5.2}" y="${top+4}" width="2.6" height="${h}" fill="${secondary}" clip-path="url(#${uid})"/>`;
+      }
+    }
+    svg += `<path d="${lSleeve}" fill="${secondary}" stroke="#1a1a1a" stroke-width="0.8"/>`;
+    svg += `<path d="${rSleeve}" fill="${secondary}" stroke="#1a1a1a" stroke-width="0.8"/>`;
+    // collar
+    svg += `<path d="M${x-4},${top+4} L${x},${top+8} L${x+4},${top+4}" fill="none" stroke="#1a1a1a" stroke-width="1"/>`;
+    // rating "number" on the shirt — dark text on light kits, light on dark
+    const lum = parseInt(primary.slice(1,3),16)*0.299 + parseInt(primary.slice(3,5),16)*0.587 + parseInt(primary.slice(5,7),16)*0.114;
+    svg += `<text x="${x}" y="${top+19}" font-size="10" font-weight="bold" text-anchor="middle"
+      font-family="Helvetica,Arial,sans-serif" fill="${lum>140?'#1a1a1a':'#ffffff'}">${item.r}</text>`;
+    // name plate under the shirt
+    const nm = escapeHtml(shortName(item.name).slice(0,12));
+    svg += `<rect x="${x-27}" y="${top+h+2}" width="54" height="11" rx="3" fill="rgba(20,20,20,0.55)"/>`;
+    svg += `<text x="${x}" y="${top+h+10}" font-size="7.5" text-anchor="middle"
+      font-family="Helvetica,Arial,sans-serif" fill="#ffffff">${nm}</text>`;
   }
-  (byCat.ATT[0]) && dot(W/2, 30, byCat.ATT[0].name, byCat.ATT[0].r);
-  if(byCat.MID[0]) dot(W/2-38, 110, byCat.MID[0].name, byCat.MID[0].r);
-  if(byCat.MID[1]) dot(W/2+38, 110, byCat.MID[1].name, byCat.MID[1].r);
-  if(byCat.DEF[0]) dot(W/2, 175, byCat.DEF[0].name, byCat.DEF[0].r);
-  if(byCat.GK[0]) dot(W/2, 235, byCat.GK[0].name, byCat.GK[0].r);
+  if(byCat.ATT[0]) jersey(W/2, 38, byCat.ATT[0], false);
+  if(byCat.MID[0]) jersey(W/2-40, 118, byCat.MID[0], false);
+  if(byCat.MID[1]) jersey(W/2+40, 118, byCat.MID[1], false);
+  if(byCat.DEF[0]) jersey(W/2, 190, byCat.DEF[0], false);
+  if(byCat.GK[0])  jersey(W/2, 258, byCat.GK[0], true);
   svg += `</svg>`;
   return svg;
 }
@@ -1815,7 +2261,8 @@ $('btn-start-rematch').onclick = async ()=>{
 };
 
 /* ============ INIT ============ */
-$('btn-use-custom').onclick = useCustomTheme;
+$('btn-use-custom-space').onclick  = ()=>useCustomTheme('space');
+$('btn-use-custom-things').onclick = ()=>useCustomTheme('things');
 renderThemeGrid();
 updateHomeForRematch();
 

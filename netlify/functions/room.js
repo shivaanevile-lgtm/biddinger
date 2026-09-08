@@ -5,6 +5,7 @@ const gamedata = require('./gamedata.js');
 const THEMES = gamedata.THEMES;
 const CATEGORY_THEMES = gamedata.CATEGORY_THEMES; // { football, sandwich, movie, ... }
 const ITEM_BY_ID = gamedata.ITEM_BY_ID;
+const checkText = gamedata.checkText;
 
 function store(){
   // NOTE: 'strong' consistency requires an internal uncachedEdgeURL that Netlify
@@ -65,6 +66,7 @@ function draftedNames(room){
 
 function newGame(themeResolved){
   const g = {
+    gameId: Date.now().toString(36) + Math.random().toString(36).slice(2,7),
     catThemeKey: themeResolved.categoryTheme || null,
     turnIdx: 0,
     openerIdx: 0,
@@ -149,6 +151,7 @@ function applyResolvedAction(room, sideIdx, type, amount){
     g.tickerLog.push(`${sideLabel(room, sideIdx)}: $${amount}`);
     g.turnIdx = 1 - sideIdx;
   } else if (type === 'pass') {
+    g.tickerLog.push(`${sideLabel(room, sideIdx)}: pass`);
     if (g.currentBidderIdx === null) {
       g.passStreak = (g.passStreak||0) + 1;
       if (g.passStreak >= 2) {
@@ -316,6 +319,15 @@ function unsoldLot(room){
   drawNextLot(room);
 }
 
+const ROOM_TTL_MS = 12 * 60 * 60 * 1000; // 12 hours
+function roomExpired(room){
+  return !!(room && room.createdAt && (Date.now() - room.createdAt) > ROOM_TTL_MS);
+}
+function expiryError(room){
+  const hrs = Math.floor((Date.now() - room.createdAt) / 3600000);
+  return { status: 410, error: `This room has expired — it was created about ${hrs} hour${hrs===1?'':'s'} ago and rooms only last 12 hours. Create a new room to play again.`, expired: true };
+}
+
 function sleep(ms){ return new Promise(r => setTimeout(r, ms)); }
 
 // Reads the room, lets mutateFn apply changes in place, then writes with an
@@ -332,9 +344,10 @@ async function readMutateWrite(s, code, mutateFn, opts){
     let got = await s.getWithMetadata(code, { type: 'json' });
     if (!got || !got.data) {
       if (attempt < maxAttempts - 1) { await sleep(250 * (attempt + 1)); continue; }
-      return { status: 404, error: 'Room not found' };
+      return { status: 404, error: `No room with code ${String(code||'').toUpperCase()}. Double-check the code, or create a new room.`, notFound: true };
     }
     const room = got.data;
+    if (roomExpired(room)) return expiryError(room);
     const fail = mutateFn(room);
     if (fail) {
       if (fail.noop) return { room }; // already applied (e.g. rejoin) — no write needed, just hand back current state
@@ -378,6 +391,7 @@ exports.handler = async (event) => {
           : [ { nickname: body.nickname, role: hostMode==='3p' ? 'host' : 'creator', budget: 20, items: [] } ],
         teams: hostMode === '2v2' ? [ { budget: 20, items: [] }, { budget: 20, items: [] } ] : undefined,
         game: null,
+        createdAt: Date.now(),
         rev: 1
       };
       await s.setJSON(code, room);
@@ -426,7 +440,8 @@ exports.handler = async (event) => {
       // 2v2 team's proposal has actually expired, so a poller's screen
       // catches the auto-resolved outcome without anyone submitting anything.
       const peek = await s.get(code, { type: 'json' });
-      if (!peek) return json(404, { error: 'Room not found' });
+      if (!peek) return json(404, { error: `No room with code ${String(code||'').toUpperCase()}. Double-check the code, or create a new room.`, notFound: true });
+      if (roomExpired(peek)) { const e = expiryError(peek); return json(e.status, { error: e.error, expired: true }); }
       const pa = peek.game && peek.game.pendingAction;
       if (pa && Date.now() >= pa.expiresAt) {
         const result = await readMutateWrite(s, code, (room) => {
@@ -516,16 +531,29 @@ exports.handler = async (event) => {
 
         const arg = String(body.item || '').trim();
         let chosen = null;
-        if (/^\d+$/.test(arg)) {
-          const rec = ITEM_BY_ID[parseInt(arg, 10)];
-          if (rec) chosen = options.find(o => o.name === rec.name);
+
+        // The host may invent a lot instead of picking one from the pool.
+        if (body.custom) {
+          const bad = checkText(arg, 'Item name');
+          if (bad) return { status: 400, error: bad };
+          if (draftedNames(room).has(arg)) return { status: 400, error: `"${arg}" has already been drafted` };
+          let rating = parseInt(body.rating, 10);
+          if (isNaN(rating)) rating = 6;
+          rating = Math.max(1, Math.min(10, rating));
+          const cat = g.catThemeKey ? (g.pickCat || CATEGORY_THEMES[g.catThemeKey].cats[g.catIdx]) : null;
+          chosen = { name: arg, r: rating, cat, custom: true };
+        } else {
+          if (/^\d+$/.test(arg)) {
+            const rec = ITEM_BY_ID[parseInt(arg, 10)];
+            if (rec) chosen = options.find(o => o.name === rec.name);
+          }
+          if (!chosen && arg) {
+            const lower = arg.toLowerCase();
+            chosen = options.find(o => o.name.toLowerCase() === lower)
+                  || options.find(o => o.name.toLowerCase().includes(lower));
+          }
+          if (!chosen) return { status: 400, error: `"${body.item}" isn't available in this category` };
         }
-        if (!chosen && arg) {
-          const lower = arg.toLowerCase();
-          chosen = options.find(o => o.name.toLowerCase() === lower)
-                || options.find(o => o.name.toLowerCase().includes(lower));
-        }
-        if (!chosen) return { status: 400, error: `"${body.item}" isn't available in this category` };
 
         // pull it out of the normal queue so it can't come up twice
         const strip = arr => { if(!arr) return; const i = arr.findIndex(x => (x[0] || x.name) === chosen.name); if (i > -1) arr.splice(i,1); };
@@ -640,6 +668,61 @@ exports.handler = async (event) => {
           bidders[ha.sideIdx].items[ha.itemIdx] = hb.item;
           bidders[hb.sideIdx].items[hb.itemIdx] = ha.item;
           g.stealNotice = `Swapped ${a.rec.name} (${sideLabel(room, ha.sideIdx)}) for ${b.rec.name} (${sideLabel(room, hb.sideIdx)})`;
+        } else if (cmd === 'swapall') {
+          const a = bidders[0], b = bidders[1];
+          if (!a || !b) return { status: 400, error: 'Need two sides to swap rosters' };
+          const tmp = a.items;
+          a.items = b.items;
+          b.items = tmp;
+          g.stealNotice = `Swapped entire rosters — ${sideLabel(room,0)} (${a.items.length}) ⇄ ${sideLabel(room,1)} (${b.items.length})`;
+        } else if (cmd === 'give') {
+          const parts = String(arg).trim().split(/\s+/).filter(Boolean);
+          if (!parts.length) return { status: 400, error: 'Usage: give <id> [nickname]' };
+          const res = resolveItemToken(room, parts[0]);
+          if (res.error) return { status: 400, error: res.error };
+          const rec = res.rec;
+
+          // no nickname = give it to yourself
+          let targetIdx = myIdx;
+          const targetName = parts.slice(1).join(' ').trim();
+          if (targetName) {
+            const p = room.players.find(pl => pl.nickname.toLowerCase() === targetName.toLowerCase());
+            targetIdx = p ? mySideIndex(room, p.nickname) : -1;
+            if (targetIdx < 0) {
+              const known = room.hostMode === '2v2' ? room.players.map(p=>p.nickname).join(', ') : bidders.map(p=>p.nickname).join(', ');
+              return { status: 400, error: `No bidder named "${targetName}". In this room: ${known}` };
+            }
+          }
+
+          const holder = findHolder(room, rec.name);
+          if (holder && holder.sideIdx === targetIdx) {
+            return { status: 400, error: `${sideLabel(room, targetIdx)} already has "${rec.name}".` };
+          }
+
+          // capacity check against the receiving side
+          const item = holder ? holder.item : { name: rec.name, r: rec.r, cat: rec.cat, paid: 0 };
+          if (g.catThemeKey && item.cat) {
+            const ct = CATEGORY_THEMES[g.catThemeKey];
+            const have = (bidders[targetIdx].items||[]).filter(it => it.cat === item.cat).length;
+            if (have >= ct.required[item.cat]) {
+              return { status: 400, error: `${sideLabel(room, targetIdx)}'s ${item.cat} slot${ct.required[item.cat]>1?'s are':' is'} already full (${have}/${ct.required[item.cat]}).` };
+            }
+          } else if (!g.catThemeKey && (bidders[targetIdx].items||[]).length >= 5) {
+            return { status: 400, error: `${sideLabel(room, targetIdx)} already has 5 items.` };
+          }
+
+          if (holder) {
+            bidders[holder.sideIdx].items.splice(holder.itemIdx, 1);
+          } else {
+            // undrafted: pull it out of the queue/pool so it can't come up again
+            const strip = arr => { if(!arr) return; const i = arr.findIndex(x => (x[0]||x.name) === rec.name); if(i>-1) arr.splice(i,1); };
+            strip(g.catQueue); strip(g.itemPool);
+            if (g.pendingNext) Object.keys(g.pendingNext).forEach(k => strip(g.pendingNext[k]));
+          }
+          bidders[targetIdx].items.push(item);
+          g.stealNotice = holder
+            ? `Moved #${rec.id} ${rec.name} from ${sideLabel(room, holder.sideIdx)} to ${sideLabel(room, targetIdx)}`
+            : `Gave #${rec.id} ${rec.name} to ${sideLabel(room, targetIdx)} straight from the pool`;
         } else if (cmd === 'steal') {
           if (!arg) return { status: 400, error: 'Usage: steal <id or item name>' };
           const themeKey = g.catThemeKey || room.theme.key;

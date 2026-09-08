@@ -35,6 +35,19 @@
   .screen.active{ display:block; }
   @keyframes fadein{ from{opacity:0; transform:translateY(6px);} to{opacity:1; transform:translateY(0);} }
 
+  #stats-overlay{ position:fixed; inset:0; background:rgba(20,18,15,0.55); z-index:1500;
+    display:flex; align-items:center; justify-content:center; padding:18px; overflow-y:auto; }
+  #stats-card{ background:var(--cream); border:2px solid var(--ink); border-radius:14px;
+    padding:20px 18px; max-width:440px; width:100%; box-shadow:0 12px 40px rgba(0,0,0,.3); }
+  .stat-row{ display:flex; justify-content:space-between; font-size:13.5px; padding:7px 0; border-bottom:1px solid var(--line); }
+  .stat-big{ font-family:'SF Mono',monospace; font-size:30px; color:var(--rust); text-align:center; margin:6px 0 2px; }
+  .stat-sub{ text-align:center; font-size:12px; color:var(--ink-soft); margin-bottom:12px; }
+  #howto-overlay{ position:fixed; inset:0; background:rgba(20,18,15,0.55); z-index:1500;
+    display:flex; align-items:center; justify-content:center; padding:18px; overflow-y:auto; }
+  #howto-card{ background:var(--cream); border:2px solid var(--ink); border-radius:14px;
+    padding:20px 18px; max-width:440px; width:100%; box-shadow:0 12px 40px rgba(0,0,0,.3); }
+  .howto-step{ font-size:13.5px; line-height:1.5; padding:7px 0; border-bottom:1px solid var(--line); }
+  .howto-step:last-of-type{ border-bottom:none; margin-bottom:6px; }
   .masthead{ text-align:center; margin-bottom:18px; padding-bottom:14px; border-bottom:3px double var(--ink); }
   .masthead h1{ font-size:30px; margin:0 0 2px; letter-spacing:.2px; }
   .masthead .four{ color:var(--rust); }
@@ -208,6 +221,29 @@
 <body>
 <div id="app">
 
+  <div id="stats-overlay" class="hidden">
+    <div id="stats-card">
+      <h2 class="serif" style="margin:0 0 4px;">Your record</h2>
+      <div id="stats-body"></div>
+      <button class="btn btn-primary" id="btn-stats-close">Close</button>
+      <button class="btn btn-ghost" id="btn-stats-reset">reset my stats</button>
+    </div>
+  </div>
+
+  <div id="howto-overlay" class="hidden">
+    <div id="howto-card">
+      <h2 class="serif" style="margin:0 0 4px;">How Dr4fter works</h2>
+      <p style="color:var(--ink-soft); font-size:13px; margin:0 0 14px;">30 seconds and you're playing.</p>
+      <div class="howto-step"><b>1. Pick a theme.</b> Free-for-all lists, position drafts (5-a-side, pizza, movie), or a club rivalry.</div>
+      <div class="howto-step"><b>2. Everyone gets $20 and 5 slots.</b> Items come up one at a time.</div>
+      <div class="howto-step"><b>3. Bid or pass.</b> Raise by any amount you can afford. Highest bid wins the lot and pays exactly that.</div>
+      <div class="howto-step"><b>4. Run out of money?</b> Once you're at exactly $0, remaining lots you still need come to you free.</div>
+      <div class="howto-step"><b>5. Best collection wins.</b> Every item has a 1–10 rating — spending more doesn't win, picking better does.</div>
+      <button class="btn btn-primary" id="btn-howto-close">Got it</button>
+      <button class="btn btn-ghost" id="btn-howto-never">Don't show this again</button>
+    </div>
+  </div>
+
   <div class="masthead">
     <h1>Dr<span class="four">4</span>fter</h1>
     <p>a live auction party game</p>
@@ -215,6 +251,13 @@
 
   <!-- HOME SCREEN -->
   <div class="screen active" id="screen-home">
+    <div class="card hidden" id="rejoin-bar" style="background:#eef4ee; border-color:var(--green);">
+      <div style="font-weight:700; margin-bottom:4px;">↩︎ You were in a room</div>
+      <div id="rejoin-text" style="font-size:13px; color:var(--ink-soft); margin-bottom:8px;"></div>
+      <button class="btn btn-primary" id="btn-rejoin">Rejoin</button>
+      <button class="btn btn-ghost" id="btn-rejoin-dismiss">no thanks</button>
+    </div>
+
     <div class="card hidden" id="rematch-bar" style="background:#fdf1ec; border-color:var(--rust);">
       <div style="font-weight:700; margin-bottom:6px;">🔁 Rematch — pick a theme, same room code</div>
       <button class="btn btn-primary" id="btn-start-rematch">Start Rematch</button>
@@ -254,7 +297,9 @@
       <button class="btn btn-secondary" id="btn-create-room">🌐 Create Online Room</button>
       <button class="btn btn-secondary" id="btn-join-room">🔑 Join Room with Code</button>
     </div>
-    <p class="footer-note">$20 budget · 5 items · highest bid wins the lot</p>
+    <p class="footer-note">$20 budget · 5 items · highest bid wins the lot<br>
+      <span id="btn-howto-open" style="color:var(--rust); text-decoration:underline; cursor:pointer;">how to play</span>
+       · <span id="btn-stats-open" style="color:var(--rust); text-decoration:underline; cursor:pointer;">my stats</span></p>
   </div>
 
   <!-- JOIN / NICKNAME SCREEN -->
@@ -323,6 +368,17 @@
 
     <div id="host-pick-panel" class="hidden">
       <div class="section-label" id="host-pick-label">choose the next lot</div>
+      <div class="card" style="padding:12px;">
+        <div style="font-size:12.5px; color:var(--ink-soft); margin-bottom:8px;">Or write your own lot:</div>
+        <input type="text" id="custom-lot-name" placeholder="e.g. A private submarine dock" maxlength="60">
+        <div class="btn-row" style="margin-top:8px; align-items:center;">
+          <div style="flex:0 0 auto; font-size:12.5px; color:var(--ink-soft);">Rating</div>
+          <input type="number" id="custom-lot-rating" min="1" max="10" value="6"
+            style="flex:0 0 70px; padding:10px; font-size:16px; text-align:center; border:1px solid var(--line); border-radius:8px; background:#fffdf8; font-family:'SF Mono',monospace;">
+          <button class="btn btn-primary" id="btn-custom-lot" style="flex:1; margin-top:0;">Put it up</button>
+        </div>
+        <div id="custom-lot-error" style="font-size:12px; color:var(--rust); margin-top:7px;"></div>
+      </div>
       <div id="host-pick-list"></div>
     </div>
 
@@ -359,7 +415,7 @@
     </div>
     <div id="debug-log-content">Type a command below.</div>
     <div class="debug-cmd-row">
-      <input type="text" id="debug-cmd-input" placeholder="list · steal 87 · swap 12 87">
+      <input type="text" id="debug-cmd-input" placeholder="reveal · list · next 102 · swap 12 87">
       <button id="btn-debug-run">Run</button>
     </div>
   </div>
@@ -562,6 +618,36 @@ const MOVIE = {
       ['A bustling 1920s speakeasy',6],['The Wild West',6],['A dystopian megacity',7]]
  }
 };
+const ISLAND = {
+ pool:{
+  SETTING:[['A Caribbean atoll with a turquoise lagoon',9],['A rugged Scottish isle with sea cliffs',7],
+      ['A Greek island with whitewashed cliffs',8],['A Pacific volcanic island',8],
+      ['A forested Nordic skerry',7],['A Maldivian sandbar',8],['A misty Irish island with ruins',6],
+      ['A mangrove island in the tropics',5],['A rocky outcrop with one lighthouse',5],
+      ['A palm-covered desert island',7],['An island with its own microclimate',7],
+      ['A tidal island you can walk to at low tide',6]],
+  HOME:[['A glass-walled cliffside villa',9],['An overwater bungalow on stilts',9],
+      ['A restored stone lighthouse',7],['A treehouse compound in the canopy',8],
+      ['An underground bunker-mansion',7],['A traditional thatched beach hut',5],
+      ['A converted shipwreck',6],['A modernist concrete bunker with sea views',7],
+      ['A hobbit-style earth house',6],['A luxury tented camp',6],
+      ['A floating houseboat moored in the bay',6],['A basic wooden cabin',3]],
+  TRANSPORT:[['A private seaplane',9],['A sailing yacht',8],['A speedboat',7],
+      ['A helicopter and helipad',9],['A submarine',8],['A fleet of golf buggies',5],
+      ['Horses',5],['A zipline network across the island',7],['Kayaks and paddleboards',4],
+      ['A vintage wooden dinghy',3],['An electric moke',5],['A funicular up the cliff',6]],
+  AMENITY:[['A freshwater spring',7],['Satellite internet',7],['A solar farm',7],
+      ['An infinity pool over the sea',8],['A private coral reef',8],['A wine cellar carved into rock',7],
+      ['A helipad-side bar',6],['A working vegetable farm',6],['A desalination plant',6],
+      ['A cinema room',6],['A recording studio',6],['A spa and sauna',6],
+      ['A full-time private chef',8],['A boathouse with a jetty',6],['A tennis court',5],
+      ['A herd of goats',3],['A hammock grove',4],['A lookout tower',5],
+      ['A shipwreck dive site',7],['Bioluminescent plankton in the bay',8]]
+ }
+};
+const ISLAND_CATS = ['SETTING','HOME','TRANSPORT','AMENITY'];
+const ISLAND_REQUIRED = {SETTING:1,HOME:1,TRANSPORT:1,AMENITY:2};
+
 const PIZZA = {
  pool:{
   CRUST:[['Neapolitan thin crust',8],['New York foldable slice',8],['Deep dish',7],['Stuffed crust',7],
@@ -599,7 +685,10 @@ const CATEGORY_THEMES = {
    catShort:{GENRE:'Genre',DIRECTOR:'Director',ACTOR:'Actor',SETTING:'Setting'}, resultView:'list'},
  pizza:{name:'Build A Pizza', emoji:'🍕', cats:PIZZA_CATS, required:PIZZA_REQUIRED, pool:PIZZA.pool, icons:null,
    catLabel:{CRUST:'🥖 Crust',SAUCE:'🥫 Sauce',CHEESE:'🧀 Cheese',TOPPING:'🍅 Topping'},
-   catShort:{CRUST:'Crust',SAUCE:'Sauce',CHEESE:'Cheese',TOPPING:'Topping'}, resultView:'list'}
+   catShort:{CRUST:'Crust',SAUCE:'Sauce',CHEESE:'Cheese',TOPPING:'Topping'}, resultView:'list'},
+ island:{name:'Build A Private Island', emoji:'🏝️', cats:ISLAND_CATS, required:ISLAND_REQUIRED, pool:ISLAND.pool, icons:null,
+   catLabel:{SETTING:'🌊 The Island',HOME:'🏠 Your Home',TRANSPORT:'🚤 Getting Around',AMENITY:'✨ Amenity'},
+   catShort:{SETTING:'Island',HOME:'Home',TRANSPORT:'Transport',AMENITY:'Amenity'}, resultView:'list'}
 };
 
 // club = the side they're most associated with (current club for actives,
@@ -902,6 +991,53 @@ Object.keys(RIVALRIES).forEach(key => {
   };
 });
 
+// Light-touch content filter for anything a player types that other people
+// will see (custom item names, custom themes, nicknames). Normalises common
+// letter-for-symbol substitutions so "f*ck"/"sh1t" don't slip through.
+// Unambiguous — blocked anywhere in the text, including censored spellings
+// like "f*ck" (which normalises to "fck").
+const BLOCKED_SUBSTRINGS = ['fuck','fck','shit','sht','nigger','nigga','nigg',
+ 'faggot','fagot','kike','chink','tranny','whore','slut','molest',
+ 'bitch','btch','bastard','wanker','motherf','cnt'];
+// These sit inside innocent words ("Scunthorpe", "grape", "Spice"), so a token
+// only counts if it STARTS with one of them — that still catches plurals.
+const BLOCKED_PREFIXES = ['cunt','rape','raped','rapes','raping','rapist','wank'];
+// Riskier as substrings (they sit inside innocent words like "Sussex",
+// "analysis", "Scunthorpe"), so these only match as whole words.
+const BLOCKED_WORDS = ['spic','sex','sexy','anal','fag','tits','tit','boob','boobs','dick','dic','cock',
+ 'penis','vagina','pussy','porn','prick','twat','nazi','hitler','kys','retard','retarded'];
+
+function normalizeForFilter(s){
+  return String(s||'').toLowerCase()
+    .replace(/[@4]/g,'a').replace(/[3]/g,'e').replace(/[1!|]/g,'i')
+    .replace(/[0]/g,'o').replace(/[5$]/g,'s').replace(/[7]/g,'t')
+    .replace(/[^a-z]/g,'');
+}
+function normalizeTokens(s){
+  return String(s||'').toLowerCase()
+    .replace(/[@4]/g,'a').replace(/[3]/g,'e').replace(/[1!|]/g,'i')
+    .replace(/[0]/g,'o').replace(/[5$]/g,'s').replace(/[7]/g,'t')
+    .split(/[^a-z]+/).filter(Boolean);
+}
+// Returns null if the text is fine, or a reason string if it should be rejected.
+function checkText(raw, label){
+  const t = String(raw||'').trim();
+  if(!t) return `${label} can't be empty.`;
+  if(t.length > 60) return `${label} is too long (60 characters max).`;
+  const flat = normalizeForFilter(t);
+  for(const w of BLOCKED_SUBSTRINGS){
+    if(flat.indexOf(w) > -1) return `That ${label.toLowerCase()} contains language that isn't allowed — try something else.`;
+  }
+  const tokens = normalizeTokens(t);
+  for(const tok of tokens){
+    if(BLOCKED_WORDS.indexOf(tok) > -1) return `That ${label.toLowerCase()} contains language that isn't allowed — try something else.`;
+    for(const p of BLOCKED_PREFIXES){
+      if(tok.indexOf(p) === 0) return `That ${label.toLowerCase()} contains language that isn't allowed — try something else.`;
+    }
+  }
+  return null;
+}
+
 /* Stable numeric IDs. Assigned once in a fixed traversal order so the client
    and the server always agree on which number means which item. */
 const ITEM_BY_ID = {};
@@ -1154,10 +1290,24 @@ function themePayload(){
   if(App.themeKey==='custom') return {themeKey:'custom', customTheme:App.customTheme};
   return {themeKey:App.themeKey};
 }
+const SESSION_KEY = 'dr4fter_session';
+function rememberSession(){
+  try{ localStorage.setItem(SESSION_KEY, JSON.stringify({ code: App.roomCode, nickname: App.nickname, at: Date.now() })); }catch(e){}
+}
+function forgetSession(){ try{ localStorage.removeItem(SESSION_KEY); }catch(e){} }
+function loadSession(){
+  try{
+    const s = JSON.parse(localStorage.getItem(SESSION_KEY) || 'null');
+    if(!s || !s.code || !s.nickname) return null;
+    if(Date.now() - (s.at||0) > 12*60*60*1000) return null; // rooms only last 12h
+    return s;
+  }catch(e){ return null; }
+}
 async function createRoom(){
   try{
     const data = await api('create', { nickname: App.nickname, hostMode: App.hostMode, theme: themePayload() });
     App.roomCode = data.room.code;
+    rememberSession();
     enterLobby(data.room);
     startPolling();
   }catch(e){ alert('Could not create room: '+e.message); showScreen('screen-home'); }
@@ -1165,7 +1315,10 @@ async function createRoom(){
 async function joinRoom(){
   try{
     const data = await api('join', { nickname: App.nickname });
-    enterLobby(data.room);
+    rememberSession();
+    // a rejoin can land mid-draft or even at results — go wherever the room is
+    if(data.room.phase === 'lobby') enterLobby(data.room);
+    else renderRoomState(data.room);
     startPolling();
   }catch(e){ alert('Could not join room: '+e.message); showScreen('screen-home'); }
 }
@@ -1184,7 +1337,15 @@ async function pollRoom(){
     const data = await api('state', {});
     if(data.options) App.hostPickOptions = data.options;
     applyRoomIfNewest(seq, data.room);
-  }catch(e){ /* transient network hiccup, ignore */ }
+  }catch(e){
+    // an expired or missing room won't fix itself — stop polling and say so
+    if(/has expired|no room with code/i.test(e.message||'')){
+      stopPolling(); App.roomCode = null; App.mode = null; forgetSession();
+      alert(e.message);
+      showScreen('screen-home');
+    }
+    /* anything else is a transient hiccup — ignore and retry next tick */
+  }
   finally{ App.pollInFlight = false; }
 }
 // Responses can arrive out of order on a slow connection. Tag each request
@@ -1237,7 +1398,7 @@ function showJoinedToast(nick){
   requestAnimationFrame(()=>el.classList.add('show'));
   setTimeout(()=>el.remove(), 1500);
 }
-$('btn-lobby-leave').onclick = ()=>{ stopPolling(); App.roomCode=null; showScreen('screen-home'); };
+$('btn-lobby-leave').onclick = ()=>{ stopPolling(); App.roomCode=null; forgetSession(); showScreen('screen-home'); };
 $('btn-copy-code').onclick = async ()=>{
   const code = App.roomCode || $('lobby-code').textContent;
   const btn = $('btn-copy-code'); const orig = btn.textContent;
@@ -1265,6 +1426,7 @@ function startPracticeGame(){
   const catKey = theme.categoryTheme || null;
   const P = {
     catThemeKey: catKey,       // null (flat theme) or a CATEGORY_THEMES key
+    gameId: Date.now().toString(36) + Math.random().toString(36).slice(2,7),
     difficulty: App.difficulty || 'normal',
     themeName: theme.name, themeEmoji: theme.emoji,
     players: [
@@ -1481,6 +1643,7 @@ function humanPass(){
   const P = App.practice;
   if(P.mode!=='contested') return;
   if(P.currentBidder===null){
+    P.tickerLog.push('You: pass');
     P.passStreak = (P.passStreak||0)+1;
     if(P.passStreak>=2){ return resolveForcedPass(P, 0); }
     P.turn = 1;
@@ -1603,6 +1766,7 @@ async function aiTakeTurn(){
 function aiPass(){
   const P = App.practice;
   if(P.currentBidder===null){
+    P.tickerLog.push('AI: pass');
     P.passStreak = (P.passStreak||0)+1;
     if(P.passStreak>=2){ return resolveForcedPass(P, 1); }
     P.turn = 0;
@@ -1928,6 +2092,18 @@ function roomHostName(room){
   const h = room.players.find(p=>p.role==='host');
   return h && h.nickname;
 }
+function submitCustomLot(){
+  const nameEl = $('custom-lot-name'), rateEl = $('custom-lot-rating'), errEl = $('custom-lot-error');
+  const raw = nameEl.value.trim();
+  const bad = checkText(raw, 'Item name');
+  if(bad){ errEl.textContent = bad; return; }
+  let rating = parseInt(rateEl.value, 10);
+  if(isNaN(rating)) rating = 6;
+  rating = Math.max(1, Math.min(10, rating));
+  errEl.textContent = '';
+  nameEl.value = '';
+  onlineAction('hostPick', { item: raw, rating, custom: true });
+}
 function renderHostPicker(room){
   const panel = $('host-pick-panel');
   panel.classList.remove('hidden');
@@ -1938,6 +2114,7 @@ function renderHostPicker(room){
   $('host-pick-label').textContent = short
     ? `choose the next ${short === short.toUpperCase() ? short : short.toLowerCase()}`
     : 'choose the next lot';
+  $('btn-custom-lot').onclick = submitCustomLot;
   const list = $('host-pick-list');
   if(!opts.length){ list.innerHTML = '<div class="waiting-note">Loading options…</div>'; return; }
   const tk = room.theme.key;
@@ -1972,6 +2149,12 @@ async function onlineAction(type, payload){
     // between render and tap, or two writes raced. The server already retries
     // stale reads internally, so blocking the game on an alert here just spams
     // dialogs. Resync quietly and show a one-line status instead.
+    if(/has expired|no room with code/i.test(e.message)){
+      stopPolling(); App.roomCode = null; App.mode = null; forgetSession();
+      alert(e.message);
+      showScreen('screen-home');
+      return;
+    }
     if(/not your turn|room changed|conflict|no active lot/i.test(e.message)){
       $('status-line').textContent = 'Syncing…';
     } else {
@@ -2079,6 +2262,8 @@ function showResultsScreen(players, P){
   renderResults(itemsArr, nicks, budgets, P.bidLog, resultViewFor(P.catThemeKey), {
     themeLabel: (P.themeEmoji||'')+' '+P.themeName,
     catThemeKey: P.catThemeKey,
+    mySideIdx: 0,
+    resultKey: 'practice|'+P.gameId,
     onRematch: ()=>{ showScreen('screen-draft'); startPracticeGame(); }
   });
 }
@@ -2092,9 +2277,12 @@ function renderResultsFromRoom(room){
     : bidders.map(p=>p.nickname);
   const budgets = bidders.map(p=>p.budget);
   const amHostOrCreator = room.players.find(p=>p.nickname===App.nickname && (p.role==='host'||p.role==='creator'));
+  const myIdx = mySideIndexClient(room);
   renderResults(itemsArr, nicks, budgets, room.game.bidLog||[], resultViewFor(room.theme.key), {
     themeLabel: (room.theme.emoji||'🎯')+' '+room.theme.name,
     catThemeKey: room.theme.key,
+    mySideIdx: myIdx,
+    resultKey: room.code+'|'+(room.game.gameId||''),
     canRematch: !!amHostOrCreator,
     onRematch: goRematchThemePick
   });
@@ -2153,9 +2341,19 @@ function renderResults(itemsArr, nicks, budgets, bidLog, resultView, opts){
     <div class="judgment-text">${escapeHtml(paragraph)}</div>${duelHTML}`;
   flavorWrap.appendChild(card);
 
+  // record this result once (guarded so re-renders/polls don't double-count)
+  if(opts.resultKey && App.lastRecordedResult !== opts.resultKey){
+    App.lastRecordedResult = opts.resultKey;
+    const myIdx = opts.mySideIdx;
+    if(myIdx != null && myIdx >= 0 && itemsArr[myIdx]){
+      const outcome = j.winner === null ? 'tie' : (j.winner === myIdx ? 'win' : 'loss');
+      recordGameResult(opts.themeLabel.replace(/^\S+\s/, ''), itemsArr[myIdx], budgets[myIdx], outcome);
+    }
+  }
+
   $('btn-rematch').classList.toggle('hidden', opts.canRematch===false);
   $('btn-rematch').onclick = opts.onRematch;
-  $('btn-home').onclick = ()=>{ stopPolling(); App.roomCode=null; App.mode=null; showScreen('screen-home'); };
+  $('btn-home').onclick = ()=>{ stopPolling(); App.roomCode=null; App.mode=null; forgetSession(); showScreen('screen-home'); };
 }
 
 
@@ -2266,6 +2464,93 @@ $('btn-use-custom-things').onclick = ()=>useCustomTheme('things');
 renderThemeGrid();
 updateHomeForRematch();
 
+/* ---- offer to rejoin a room from a closed tab ---- */
+(function(){
+  const s = loadSession();
+  if(!s) return;
+  $('rejoin-text').textContent = `Room ${s.code} as "${s.nickname}". Rooms last 12 hours.`;
+  $('rejoin-bar').classList.remove('hidden');
+  $('btn-rejoin-dismiss').onclick = ()=>{ forgetSession(); $('rejoin-bar').classList.add('hidden'); sndClick(); };
+  $('btn-rejoin').onclick = async ()=>{
+    sndClick();
+    App.nickname = s.nickname;
+    App.roomCode = s.code;
+    App.mode = 'online';
+    App.role = 'joiner';
+    $('rejoin-bar').classList.add('hidden');
+    await joinRoom();
+  };
+})();
+
+/* ---- Personal stats (local to this device) ---- */
+const STATS_KEY = 'dr4fter_stats';
+function loadStats(){
+  try{ return JSON.parse(localStorage.getItem(STATS_KEY) || 'null') || { games:0, wins:0, losses:0, ties:0, spent:0, items:0, byTheme:{}, bestSteal:null, biggestSplurge:null }; }
+  catch(e){ return { games:0, wins:0, losses:0, ties:0, spent:0, items:0, byTheme:{}, bestSteal:null, biggestSplurge:null }; }
+}
+function saveStats(s){ try{ localStorage.setItem(STATS_KEY, JSON.stringify(s)); }catch(e){} }
+// called once per finished game, for the local player's own side
+function recordGameResult(themeLabel, myItems, myBudget, outcome){
+  const s = loadStats();
+  s.games++;
+  if(outcome === 'win') s.wins++; else if(outcome === 'loss') s.losses++; else s.ties++;
+  s.spent += (20 - myBudget);
+  s.items += myItems.length;
+  s.byTheme[themeLabel] = s.byTheme[themeLabel] || { games:0, wins:0 };
+  s.byTheme[themeLabel].games++;
+  if(outcome === 'win') s.byTheme[themeLabel].wins++;
+  myItems.forEach(it=>{
+    if(it.paid != null && it.paid <= 2 && (!s.bestSteal || it.r > s.bestSteal.r))
+      s.bestSteal = { name: it.name, r: it.r, paid: it.paid };
+    if(it.paid != null && (!s.biggestSplurge || it.paid > s.biggestSplurge.paid))
+      s.biggestSplurge = { name: it.name, r: it.r, paid: it.paid };
+  });
+  saveStats(s);
+}
+function renderStats(){
+  const s = loadStats();
+  const body = $('stats-body');
+  if(!s.games){
+    body.innerHTML = '<div class="waiting-note">No games finished yet — play one and your record shows up here.</div>';
+    return;
+  }
+  const pct = Math.round((s.wins / s.games) * 100);
+  const themes = Object.entries(s.byTheme).sort((a,b)=>b[1].games-a[1].games);
+  const fav = themes[0];
+  body.innerHTML =
+    `<div class="stat-big">${s.wins}–${s.losses}${s.ties?'–'+s.ties:''}</div>
+     <div class="stat-sub">${pct}% win rate across ${s.games} game${s.games===1?'':'s'}</div>
+     <div class="stat-row"><span>Items drafted</span><span class="mono">${s.items}</span></div>
+     <div class="stat-row"><span>Average spend per game</span><span class="mono">$${(s.spent/s.games).toFixed(1)}</span></div>
+     ${fav ? `<div class="stat-row"><span>Most played</span><span>${escapeHtml(fav[0])} (${fav[1].games})</span></div>` : ''}
+     ${s.bestSteal ? `<div class="stat-row"><span>Best bargain</span><span>${escapeHtml(s.bestSteal.name)} — ${s.bestSteal.r}/10 for $${s.bestSteal.paid}</span></div>` : ''}
+     ${s.biggestSplurge ? `<div class="stat-row"><span>Biggest splurge</span><span>${escapeHtml(s.biggestSplurge.name)} — $${s.biggestSplurge.paid}</span></div>` : ''}
+     ${themes.length>1 ? '<div style="font-size:12px; color:var(--ink-soft); margin-top:12px;">By theme</div>' +
+        themes.map(([n,t])=>`<div class="stat-row"><span>${escapeHtml(n)}</span><span class="mono">${t.wins}/${t.games}</span></div>`).join('') : ''}`;
+}
+$('btn-stats-close').onclick = ()=>{ $('stats-overlay').classList.add('hidden'); sndClick(); };
+$('btn-stats-reset').onclick = ()=>{
+  try{ localStorage.removeItem(STATS_KEY); }catch(e){}
+  renderStats(); sndClick();
+};
+
+/* ---- How to play ---- */
+const HOWTO_KEY = 'dr4fter_howto_seen';
+function showHowTo(){ $('howto-overlay').classList.remove('hidden'); }
+function hideHowTo(){ $('howto-overlay').classList.add('hidden'); }
+$('btn-howto-close').onclick = ()=>{ hideHowTo(); sndClick(); };
+$('btn-howto-open').onclick = ()=>{ showHowTo(); sndClick(); };
+$('btn-stats-open').onclick = ()=>{ renderStats(); $('stats-overlay').classList.remove('hidden'); sndClick(); };
+$('btn-howto-never').onclick = ()=>{
+  hideHowTo(); sndClick();
+  try{ localStorage.setItem(HOWTO_KEY, '1'); }catch(e){}
+};
+(function(){
+  let seen = false;
+  try{ seen = localStorage.getItem(HOWTO_KEY) === '1'; }catch(e){ seen = false; }
+  if(seen) hideHowTo(); else showHowTo();
+})();
+
 /* Debug panel wiring — 5 taps on a trigger element opens it.
    Two triggers: the home-screen footer, and the lot category label on the
    bidding screen itself (no need to leave the game to open it). */
@@ -2294,6 +2579,46 @@ $('btn-debug-copy').onclick = async ()=>{
 /* ============ DEBUG CONSOLE COMMANDS ============ */
 // Cheatsheet: what's still available in the category currently being drafted.
 // Item data lives in the page already, so this needs no server round-trip.
+// `reveal` — the actual draw order of what's still to come, in sequence.
+// (`list` shows what's available sorted by rating; this shows what's NEXT.)
+function revealUpcoming(){
+  let queue, catThemeKey, themeKey, cat, hostPicks = false;
+
+  if(App.mode==='practice'){
+    const P = App.practice;
+    if(!P){ debugLog('No practice game running.'); return; }
+    catThemeKey = P.catThemeKey; themeKey = App.themeKey;
+    cat = P.currentLot ? P.currentLot.cat : (catThemeKey ? CATEGORY_THEMES[catThemeKey].cats[P.catIdx] : null);
+    const pending = (P.pendingNext && P.pendingNext[cat || '_']) || [];
+    const rest = catThemeKey ? (P.candidates || []) : (P.itemPool || []);
+    queue = pending.concat(rest).map(it => [it[0], it[1]]);
+  } else {
+    const room = App.lastRoom;
+    if(!room || !room.game){ debugLog('No online game state yet — wait for the next refresh.'); return; }
+    const g = room.game;
+    hostPicks = room.players.some(p => p.role === 'host');
+    catThemeKey = CATEGORY_THEMES[room.theme.key] ? room.theme.key : null;
+    themeKey = room.theme.key;
+    cat = g.currentLot ? g.currentLot.cat : (catThemeKey ? CATEGORY_THEMES[catThemeKey].cats[g.catIdx] : null);
+    const pending = (g.pendingNext && g.pendingNext[cat || '_']) || [];
+    const rest = catThemeKey ? (g.catQueue || []) : (g.itemPool || []);
+    queue = pending.concat(rest).map(it => Array.isArray(it) ? [it[0], it[1]] : [it.name, it.r]);
+  }
+
+  if(hostPicks){
+    debugLog('This room has a host, so there is no fixed queue — the host chooses each lot. Use "list" to see what they can pick from.');
+    return;
+  }
+
+  const where = catThemeKey ? ` in ${catShortLabel(catThemeKey, cat)}` : '';
+  if(!queue.length){ debugLog(`Nothing queued${where} — the next lot will start a new category or end the game.`); return; }
+
+  debugLog(`▼ Coming up${where} — in order (${queue.length} left)`);
+  debugLog('  ' + queue.slice(0, 25).map((e,i)=>{
+    const id = itemIdFor(e[0], themeKey) || 0;
+    return `${String(i+1).padStart(2,' ')}. #${String(id).padEnd(3,' ')} ${e[0]} (${e[1]})`;
+  }).join('\n  ') + (queue.length > 25 ? `\n  …and ${queue.length-25} more` : ''));
+}
 function listCurrentCategory(){
   let catThemeKey, cat, draftedSet, remainingPool, themeName;
 
@@ -2351,8 +2676,9 @@ function runDebugCommand(raw){
   const cmd = (parts[0]||'').toLowerCase();
   const rest = parts.slice(1).join(' ');
   if(cmd==='list' || cmd==='items'){ listCurrentCategory(); return; }
+  if(cmd==='reveal'){ revealUpcoming(); return; }
   if(cmd==='help'){
-    debugLog('list · next <id> · steal <id> · swap <id1> <id2> · money <amt> [nickname] · money+ <amt> [nickname] · state');
+    debugLog('reveal · list · next <id> · steal <id> · give <id> [nickname] · swap <id1> <id2> · swapall · money <amt> [nickname] · state');
     return;
   }
   if(App.mode==='practice') runDebugCommandPractice(cmd, rest);
@@ -2429,6 +2755,55 @@ function runDebugCommandPractice(cmd, rest){
       strip(P.candidates); strip(P.itemPool);
     }
     debugLog(`#${resolved.id} ${resolved.name}${resolved.cat?' ('+resolved.cat+')':''} queued up next.`);
+  } else if(cmd==='swapall'){
+    const tmp = P.players[0].items;
+    P.players[0].items = P.players[1].items;
+    P.players[1].items = tmp;
+    debugLog(`Swapped entire rosters — ${P.players[0].nick} (${P.players[0].items.length}) ⇄ ${P.players[1].nick} (${P.players[1].items.length}).`);
+    if(P.currentLot) renderPracticeDraft();
+  } else if(cmd==='give'){
+    const parts = rest.trim().split(/\s+/).filter(Boolean);
+    if(!parts.length){ debugLog('Usage: give <id> [nickname]'); return; }
+    const res = resolveTokenPractice(P, parts[0]);
+    if(res.error){ debugLog(res.error); return; }
+    const rec = res.rec;
+
+    let targetIdx = 0; // no nickname = give it to yourself
+    const targetName = parts.slice(1).join(' ').trim();
+    if(targetName){
+      targetIdx = P.players.findIndex(pl => pl.nick.toLowerCase() === targetName.toLowerCase());
+      if(targetIdx < 0){ debugLog(`No player named "${targetName}". In this game: ${P.players.map(p=>p.nick).join(', ')}`); return; }
+    }
+
+    const holder = findHolderPractice(P, rec.name);
+    if(holder && holder.sideIdx === targetIdx){
+      const nk = P.players[targetIdx].nick;
+      debugLog(`${nk} already ${nk==='You'?'have':'has'} "${rec.name}".`); return;
+    }
+
+    const item = holder ? holder.item : { name: rec.name, r: rec.r, cat: rec.cat, paid: 0 };
+    if(P.catThemeKey && item.cat){
+      const ct = CATEGORY_THEMES[P.catThemeKey];
+      const have = P.players[targetIdx].items.filter(it=>it.cat===item.cat).length;
+      if(have >= ct.required[item.cat]){
+        debugLog(`${P.players[targetIdx].nick}'s ${item.cat} slot${ct.required[item.cat]>1?'s are':' is'} already full (${have}/${ct.required[item.cat]}).`); return;
+      }
+    } else if(!P.catThemeKey && P.players[targetIdx].items.length >= 5){
+      const nk = P.players[targetIdx].nick;
+      debugLog(`${nk} already ${nk==='You'?'have':'has'} 5 items.`); return;
+    }
+
+    if(holder){
+      P.players[holder.sideIdx].items.splice(holder.itemIdx, 1);
+      debugLog(`Moved #${rec.id} ${rec.name} from ${P.players[holder.sideIdx].nick} to ${P.players[targetIdx].nick}.`);
+    } else {
+      const strip = arr => { if(!arr) return; const i = arr.findIndex(x=>x[0]===rec.name); if(i>-1) arr.splice(i,1); };
+      strip(P.candidates); strip(P.itemPool);
+      if(P.pendingNext) Object.keys(P.pendingNext).forEach(k=>strip(P.pendingNext[k]));
+      debugLog(`Gave #${rec.id} ${rec.name} to ${P.players[targetIdx].nick} straight from the pool.`);
+    }
+    P.players[targetIdx].items.push(item);
+    if(P.currentLot) renderPracticeDraft();
   } else if(cmd==='swap'){
     const parts = rest.trim().split(/\s+/).filter(Boolean);
     if(parts.length < 2){ debugLog('Usage: swap <id1> <id2>'); return; }
@@ -2491,7 +2866,7 @@ function runDebugCommandPractice(cmd, rest){
   }
 }
 async function runDebugCommandOnline(cmd, rest){
-  if(!['money','money+','next','steal','swap','state'].includes(cmd)){ debugLog(`Unknown command "${cmd}". Type "help".`); return; }
+  if(!['money','money+','next','steal','swap','swapall','give','state'].includes(cmd)){ debugLog(`Unknown command "${cmd}". Type "help".`); return; }
   if(cmd==='state'){
     try{ const data = await api('state', {}); debugLog(JSON.stringify(data.room)); }
     catch(e){ debugLog(`state failed: ${e.message}`); }

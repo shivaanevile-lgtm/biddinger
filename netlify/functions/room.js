@@ -16,6 +16,46 @@ function store(){
   return getStore({ name: 'rooms' });
 }
 
+function resultsStore(){ return getStore({ name: 'results' }); }
+function resultIdGen(){
+  const chars = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+  let s = '';
+  for (let i=0;i<6;i++) s += chars[Math.floor(Math.random()*chars.length)];
+  return s;
+}
+// Snapshot a finished game so it survives the room's 12-hour lifetime.
+function buildResultSnapshot(room){
+  const sides = sidesOf(room);
+  return {
+    id: room.game.resultId,
+    theme: { key: room.theme.key, name: room.theme.name, emoji: room.theme.emoji },
+    hostMode: room.hostMode,
+    sides: sides.map((s, i) => ({
+      label: room.hostMode === '2v2'
+        ? (i === 0 ? 'Team A' : 'Team B') + ' (' + room.players.filter(p=>p.team===i).map(p=>p.nickname).join(' & ') + ')'
+        : s.nickname,
+      budget: s.budget,
+      items: (s.items||[]).map(it => ({ name: it.name, r: it.r, cat: it.cat, paid: it.paid }))
+    })),
+    bidLog: room.game.bidLog || [],
+    finishedAt: Date.now()
+  };
+}
+
+// Called after any action; saves the snapshot the first time a room lands on
+// results, so every path that ends a game is covered without hooking each one.
+async function persistResultIfFinished(room){
+  try{
+    if (!room || room.phase !== 'results' || !room.game || !room.game.resultId) return null;
+    const store = resultsStore();
+    const id = room.game.resultId;
+    const existing = await store.get(id, { type: 'json' });
+    if (existing) return id;
+    await store.setJSON(id, buildResultSnapshot(room));
+    return id;
+  }catch(e){ return null; }
+}
+
 function json(statusCode, body){
   return { statusCode, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) };
 }
@@ -67,6 +107,7 @@ function draftedNames(room){
 function newGame(themeResolved){
   const g = {
     gameId: Date.now().toString(36) + Math.random().toString(36).slice(2,7),
+    resultId: resultIdGen(),
     catThemeKey: themeResolved.categoryTheme || null,
     turnIdx: 0,
     openerIdx: 0,
@@ -434,6 +475,14 @@ exports.handler = async (event) => {
       return json(200, { room: result.room });
     }
 
+    if (action === 'result') {
+      const id = String(body.resultId || '').toUpperCase();
+      if (!id) return json(400, { error: 'Missing result id' });
+      const snap = await resultsStore().get(id, { type: 'json' });
+      if (!snap) return json(404, { error: `No saved result for ${id}. The link may be wrong, or the game never finished.` });
+      return json(200, { result: snap });
+    }
+
     if (action === 'state') {
       const code = body.roomCode;
       // Cheap plain read in the common case. Only escalate to a write if a
@@ -452,6 +501,7 @@ exports.handler = async (event) => {
           return json(200, { room: result.room, options: opts });
         }
       }
+      if (peek.phase === 'results') await persistResultIfFinished(peek);
       const opts = (peek.game && peek.game.awaitingHostPick) ? hostPickOptions(peek) : null;
       return json(200, { room: peek, options: opts });
     }
@@ -493,6 +543,7 @@ exports.handler = async (event) => {
         }
       });
       if (result.error) return json(result.status, { error: result.error });
+      await persistResultIfFinished(result.room);
       return json(200, { room: result.room });
     }
 
@@ -575,6 +626,7 @@ exports.handler = async (event) => {
         startLotMode(g, wanting);
       });
       if (result.error) return json(result.status, { error: result.error });
+      await persistResultIfFinished(result.room);
       return json(200, { room: result.room, options: hostPickOptions(result.room) });
     }
 
@@ -781,6 +833,7 @@ exports.handler = async (event) => {
       const g2 = result.room && result.room.game;
       const notice = g2 ? (g2.queuedNotice || g2.stealNotice || null) : null;
       if (g2) { delete g2.queuedNotice; delete g2.stealNotice; }
+      await persistResultIfFinished(result.room);
       return json(200, { room: result.room, notice });
     }
 

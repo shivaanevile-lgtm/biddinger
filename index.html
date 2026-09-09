@@ -65,6 +65,17 @@
   .theme-chip.selected{ border-color:var(--rust); background:#fdf1ec; }
   .theme-chip .emoji{ font-size:28px; display:block; margin-bottom:6px; }
   .theme-chip .name{ font-size:13.5px; font-weight:600; }
+  .opp-row{ display:flex; align-items:center; gap:10px; background:#fffdf8; border:1px solid var(--line);
+    border-radius:10px; padding:9px 11px; margin-bottom:6px; cursor:pointer; }
+  .opp-row.picked{ border-color:var(--rust); background:#fdf1ec; }
+  .opp-emoji{ font-size:19px; }
+  .opp-text{ flex:1; display:flex; flex-direction:column; line-height:1.25; }
+  .opp-tag{ font-size:11px; color:var(--ink-soft); }
+  .theme-chip .lvl{ display:block; font-size:9.5px; margin-top:4px; letter-spacing:.3px;
+    text-transform:uppercase; opacity:.85; }
+  .lvl-easy{ color:var(--green); }
+  .lvl-medium{ color:var(--gold); }
+  .lvl-deep{ color:var(--rust); }
 
   input[type=text]{
     width:100%; padding:12px 12px; font-size:16px; border:1px solid var(--line); border-radius:8px;
@@ -85,6 +96,9 @@
   .btn-row .btn{ flex:1; }
 
   .badge{ display:inline-block; background:var(--cream-dark); color:var(--ink-soft); font-size:11px; padding:3px 8px; border-radius:20px; margin-left:6px; }
+  #qr-wrap{ margin:12px 0 4px; display:flex; flex-direction:column; align-items:center; }
+  #qr-box{ background:#fff; padding:10px; border-radius:10px; border:1px solid var(--line); line-height:0; }
+  #qr-caption{ font-size:11.5px; color:var(--ink-soft); margin-top:7px; }
   .room-code{ font-family:'SF Mono',monospace; font-size:26px; letter-spacing:6px; text-align:center; padding:14px; background:var(--cream-dark); border-radius:8px; margin:10px 0; }
 
   /* Item-won toast — shown for every lot resolution, styled by price tier */
@@ -263,14 +277,14 @@
       <button class="btn btn-primary" id="btn-start-rematch">Start Rematch</button>
       <button class="btn btn-ghost" id="btn-cancel-rematch">cancel rematch</button>
     </div>
-    <div class="section-label">choose a theme &mdash; pick any 5</div>
-    <div class="theme-grid" id="theme-grid"></div>
+    <div class="section-label" id="pack-label">choose a pack</div>
+    <div class="theme-grid" id="pack-grid"></div>
 
-    <div class="section-label">or a position draft &mdash; one from each category</div>
-    <div class="theme-grid" id="theme-grid-cat"></div>
-
-    <div class="section-label">⚡ rivalry drafts &mdash; two clubs, one squad</div>
-    <div class="theme-grid" id="theme-grid-rivals"></div>
+    <div id="pack-open" class="hidden">
+      <button class="btn btn-ghost" id="btn-pack-back" style="text-align:left;">← all packs</button>
+      <div class="section-label" id="pack-open-label"></div>
+      <div class="theme-grid" id="theme-grid"></div>
+    </div>
 
     <div class="card" id="custom-theme-card">
       <div style="font-weight:700; margin-bottom:8px;">✏️ Or type your own</div>
@@ -287,12 +301,8 @@
 
     <div class="section-label" id="mode-select-label">how do you want to play</div>
     <div class="card" id="mode-select-card">
-      <div class="section-label" style="margin-top:0;">AI difficulty</div>
-      <div class="btn-row" style="margin-bottom:10px;">
-        <button class="btn btn-secondary" id="btn-diff-easy">Easy</button>
-        <button class="btn btn-primary" id="btn-diff-normal">Normal</button>
-        <button class="btn btn-secondary" id="btn-diff-hard">Hard</button>
-      </div>
+      <div class="section-label" style="margin-top:0;">who are you playing?</div>
+      <div id="opponent-list" style="margin-bottom:10px;"></div>
       <button class="btn btn-primary" id="btn-practice">🤖 Practice vs AI</button>
       <button class="btn btn-secondary" id="btn-create-room">🌐 Create Online Room</button>
       <button class="btn btn-secondary" id="btn-join-room">🔑 Join Room with Code</button>
@@ -330,6 +340,11 @@
       <div id="lobby-role-note" style="font-size:13px; color:var(--ink-soft); margin-bottom:6px;"></div>
       <div class="room-code" id="lobby-code">-----</div>
       <button class="btn btn-secondary" id="btn-copy-code" style="margin-top:0;">📋 Copy code</button>
+      <button class="btn btn-secondary" id="btn-show-qr">📱 Show QR code</button>
+      <div id="qr-wrap" class="hidden">
+        <div id="qr-box"></div>
+        <div id="qr-caption">Point a camera at this to join</div>
+      </div>
       <p style="font-size:13px; color:var(--ink-soft);">Share this code with the other player<span id="lobby-plural"></span>.</p>
       <div id="lobby-players" style="margin:14px 0;"></div>
       <div class="waiting-note" id="lobby-waiting">Waiting for players to join…</div>
@@ -396,6 +411,8 @@
       <div id="flavor-wrap"></div>
     </div>
     <button class="btn btn-primary" id="btn-save-image">📸 Save as Image</button>
+    <button class="btn btn-secondary" id="btn-copy-text">📋 Copy as text</button>
+    <button class="btn btn-secondary hidden" id="btn-copy-link">🔗 Copy shareable link</button>
     <div class="btn-row">
       <button class="btn btn-secondary" id="btn-rematch">🔁 Rematch (same room)</button>
       <button class="btn btn-secondary" id="btn-home">🏠 New Game</button>
@@ -422,6 +439,7 @@
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script>
 /* ============ ON-PAGE DEBUG CONSOLE ============ */
 /* Tap the footer text (or the lot category label mid-game) 5x to open.
@@ -1038,6 +1056,20 @@ function checkText(raw, label){
   return null;
 }
 
+// How approachable each theme is. 'easy' = anyone can play, 'deep' = rewards
+// knowing the subject. Shown as a badge on the theme chips.
+const THEME_LEVEL = {
+  backyard:'easy', gaming:'easy', vacation:'easy', perfectlife:'easy', fruit:'easy',
+  bunker:'medium', superhero:'medium', videogames:'medium',
+  movies:'deep', tvshows:'deep', music:'deep',
+  sandwich:'easy', pizza:'easy', island:'easy',
+  movie:'medium',
+  football:'deep',
+  rivals_clasico:'deep', rivals_manchester:'deep', rivals_milan:'deep', rivals_london:'deep'
+};
+const LEVEL_LABEL = { easy:'easy', medium:'some knowledge', deep:'deep cut' };
+function themeLevel(key){ return THEME_LEVEL[key] || 'medium'; }
+
 /* Stable numeric IDs. Assigned once in a fixed traversal order so the client
    and the server always agree on which number means which item. */
 const ITEM_BY_ID = {};
@@ -1134,6 +1166,52 @@ const App = {
 };
 
 /* ============ HOME SCREEN: theme grid ============ */
+// The home screen outgrew a flat list, so themes live in packs now.
+const THEME_PACKS = [
+  { key:'classics', name:'Classics',  emoji:'🏡', blurb:'pick any 5',
+    themes:['backyard','gaming','bunker','vacation','perfectlife'] },
+  { key:'food',     name:'Food',      emoji:'🍕', blurb:'build a plate',
+    themes:['sandwich','pizza','fruit'] },
+  { key:'media',    name:'Screen & Sound', emoji:'🎬', blurb:'films, TV, music, games',
+    themes:['movie','movies','tvshows','music','videogames'] },
+  { key:'football', name:'Football',  emoji:'⚽', blurb:'squads & rivalries',
+    themes:['football','rivals_clasico','rivals_manchester','rivals_milan','rivals_london'] },
+  { key:'worlds',   name:'Big Ideas', emoji:'🏝️', blurb:'islands, powers, lives',
+    themes:['island','superhero'] }
+];
+function allThemeMeta(key){
+  if(CATEGORY_THEMES[key]) return CATEGORY_THEMES[key];
+  return THEMES[key];
+}
+function openPack(packKey){
+  const pack = THEME_PACKS.find(p=>p.key===packKey);
+  if(!pack) return;
+  App.openPack = packKey;
+  $('pack-label').classList.add('hidden');
+  $('pack-grid').classList.add('hidden');
+  $('pack-open').classList.remove('hidden');
+  $('pack-open-label').textContent = `${pack.emoji} ${pack.name} — ${pack.blurb}`;
+  const grid = $('theme-grid');
+  grid.innerHTML = '';
+  pack.themes.forEach(key=>{
+    const t = allThemeMeta(key);
+    if(!t) return;
+    const isCat = !!CATEGORY_THEMES[key];
+    const lvl = themeLevel(key);
+    const chip = document.createElement('div');
+    chip.className = 'theme-chip'; chip.dataset.key = key;
+    chip.innerHTML = `<span class="emoji">${t.emoji}</span><span class="name">${escapeHtml(t.name)}</span>` +
+      `<span class="lvl lvl-${lvl}">${isCat ? 'slots · ' : ''}${LEVEL_LABEL[lvl]}</span>`;
+    chip.onclick = ()=>selectTheme(key);
+    grid.appendChild(chip);
+  });
+}
+function closePack(){
+  App.openPack = null;
+  $('pack-open').classList.add('hidden');
+  $('pack-label').classList.remove('hidden');
+  $('pack-grid').classList.remove('hidden');
+}
 function renderThemeGrid(){
   const fill = (gridId, entries) => {
     const grid = $(gridId);
@@ -1141,16 +1219,24 @@ function renderThemeGrid(){
     entries.forEach(([key,t])=>{
       const chip = document.createElement('div');
       chip.className='theme-chip'; chip.dataset.key=key;
-      chip.innerHTML = `<span class="emoji">${t.emoji}</span><span class="name">${escapeHtml(t.name)}</span>`;
+      const lvl = themeLevel(key);
+      chip.innerHTML = `<span class="emoji">${t.emoji}</span><span class="name">${escapeHtml(t.name)}</span>` +
+        `<span class="lvl lvl-${lvl}">${LEVEL_LABEL[lvl]}</span>`;
       chip.onclick = ()=>selectTheme(key);
       grid.appendChild(chip);
     });
   };
-  const catEntries = Object.entries(CATEGORY_THEMES).filter(([k])=>!RIVALRIES[k]);
-  const rivalEntries = Object.entries(CATEGORY_THEMES).filter(([k])=>!!RIVALRIES[k]);
-  fill('theme-grid', Object.entries(THEMES));
-  fill('theme-grid-cat', catEntries);
-  fill('theme-grid-rivals', rivalEntries);
+  const grid = $('pack-grid');
+  grid.innerHTML = '';
+  THEME_PACKS.forEach(pack=>{
+    const chip = document.createElement('div');
+    chip.className = 'theme-chip';
+    chip.innerHTML = `<span class="emoji">${pack.emoji}</span><span class="name">${escapeHtml(pack.name)}</span>` +
+      `<span class="lvl" style="color:var(--ink-soft);">${pack.themes.length} themes</span>`;
+    chip.onclick = ()=>{ sndClick(); openPack(pack.key); };
+    grid.appendChild(chip);
+  });
+  $('btn-pack-back').onclick = ()=>{ sndClick(); closePack(); };
 }
 function selectTheme(key){
   App.themeKey = key; App.customTheme = null;
@@ -1212,17 +1298,19 @@ $('btn-create-room').onclick = ()=>{
   goNickname('choose');
 };
 $('btn-join-room').onclick = ()=> goNickname('join');
-App.difficulty = 'normal';
-function markDifficulty(d){
-  App.difficulty = d;
-  ['easy','normal','hard'].forEach(k=>{
-    $('btn-diff-'+k).classList.toggle('btn-primary', d===k);
-    $('btn-diff-'+k).classList.toggle('btn-secondary', d!==k);
+App.opponentId = 'ivy';
+function renderOpponents(){
+  const wrap = $('opponent-list');
+  wrap.innerHTML = AI_OPPONENTS.map(o=>`
+    <div class="opp-row${o.id===App.opponentId?' picked':''}" data-id="${o.id}">
+      <span class="opp-emoji">${o.emoji}</span>
+      <span class="opp-text"><b>${o.name}</b><span class="opp-tag">${escapeHtml(o.tag)}</span></span>
+      <span class="lvl lvl-${o.level==='medium'?'medium':o.level}">${o.level}</span>
+    </div>`).join('');
+  wrap.querySelectorAll('.opp-row').forEach(el=>{
+    el.onclick = ()=>{ App.opponentId = el.dataset.id; sndClick(); renderOpponents(); };
   });
 }
-$('btn-diff-easy').onclick   = ()=>{ markDifficulty('easy');   sndClick(); };
-$('btn-diff-normal').onclick = ()=>{ markDifficulty('normal'); sndClick(); };
-$('btn-diff-hard').onclick   = ()=>{ markDifficulty('hard');   sndClick(); };
 
 $('btn-practice').onclick = ()=>{
   if(!App.themeKey){ alert('Pick a theme first!'); return; }
@@ -1399,6 +1487,28 @@ function showJoinedToast(nick){
   setTimeout(()=>el.remove(), 1500);
 }
 $('btn-lobby-leave').onclick = ()=>{ stopPolling(); App.roomCode=null; forgetSession(); showScreen('screen-home'); };
+function joinUrlFor(code){ return location.origin + '/?join=' + code; }
+$('btn-show-qr').onclick = ()=>{
+  const wrap = $('qr-wrap'), box = $('qr-box'), btn = $('btn-show-qr');
+  sndClick();
+  if(!wrap.classList.contains('hidden')){
+    wrap.classList.add('hidden'); btn.textContent = '📱 Show QR code'; return;
+  }
+  const code = App.roomCode || $('lobby-code').textContent;
+  const url = joinUrlFor(code);
+  box.innerHTML = '';
+  try{
+    if(typeof QRCode === 'undefined') throw new Error('QR library unavailable');
+    new QRCode(box, { text: url, width: 180, height: 180, correctLevel: QRCode.CorrectLevel.M });
+    $('qr-caption').textContent = 'Point a camera at this to join';
+  }catch(e){
+    // CDN blocked or offline — the link still works, so show it as text
+    box.innerHTML = `<div style="font-family:'SF Mono',monospace; font-size:12px; color:#2B2620; word-break:break-all; line-height:1.4;">${escapeHtml(url)}</div>`;
+    $('qr-caption').textContent = "Couldn't draw a QR code — share this link instead";
+  }
+  wrap.classList.remove('hidden');
+  btn.textContent = '📱 Hide QR code';
+};
 $('btn-copy-code').onclick = async ()=>{
   const code = App.roomCode || $('lobby-code').textContent;
   const btn = $('btn-copy-code'); const orig = btn.textContent;
@@ -1427,11 +1537,12 @@ function startPracticeGame(){
   const P = {
     catThemeKey: catKey,       // null (flat theme) or a CATEGORY_THEMES key
     gameId: Date.now().toString(36) + Math.random().toString(36).slice(2,7),
-    difficulty: App.difficulty || 'normal',
+    opponent: opponentById(App.opponentId),
+    difficulty: (opponentById(App.opponentId).level === 'medium' ? 'normal' : opponentById(App.opponentId).level),
     themeName: theme.name, themeEmoji: theme.emoji,
     players: [
       {nick:'You', budget:20, items:[], human:true},
-      {nick:'AI', budget:20, items:[], human:false}
+      {nick:opponentById(App.opponentId).name, budget:20, items:[], human:false}
     ],
     openerIndex: 0,
     turn: 0,
@@ -1695,6 +1806,27 @@ const AI_DIFFICULTY = {
   normal: { ceilingMult: 1.00, disinterestBelow: 4, disinterestStep: 0.08, useLearning: true  },
   hard:   { ceilingMult: 1.45, disinterestBelow: 6, disinterestStep: 0.13, useLearning: true  }
 };
+
+// Named opponents, so practice mode has someone to play against rather than
+// an abstract slider. Each is a difficulty preset plus its own quirks.
+const AI_OPPONENTS = [
+  { id:'penny',  name:'Penny',  emoji:'🪙', level:'medium',
+    tag:'Hates spending. Wins by refusing junk, not by buying stars.',
+    ceilingMult:0.6,  disinterestBelow:3, disinterestStep:0.10, useLearning:false, snipe:0 },
+  { id:'marcus', name:'Marcus', emoji:'💥', level:'medium',
+    tag:'Lunges at anything rated 9+, shrugs at the rest.',
+    ceilingMult:1.0,  disinterestBelow:6, disinterestStep:0.14, useLearning:false, eliteBoost:1.8 },
+  { id:'ivy',    name:'Ivy',    emoji:'🧊', level:'medium',
+    tag:'Plays the averages. No favourites, no mistakes.',
+    ceilingMult:1.0,  disinterestBelow:4, disinterestStep:0.08, useLearning:true, snipe:0 },
+  { id:'rex',    name:'Rex',    emoji:'🔥', level:'easy',
+    tag:'Bids on everything early, then has nothing left. Beatable.',
+    ceilingMult:1.5,  disinterestBelow:2, disinterestStep:0.04, useLearning:true, earlyRush:1.4 },
+  { id:'sol',    name:'Sol',    emoji:'🧠', level:'hard',
+    tag:'Picky and patient. Only wants the best slots.',
+    ceilingMult:1.45, disinterestBelow:7, disinterestStep:0.15, useLearning:true, snipe:0 }
+];
+function opponentById(id){ return AI_OPPONENTS.find(o=>o.id===id) || AI_OPPONENTS[2]; }
 let aiPrefsCache = {};
 async function fetchAiPref(key){
   if(aiPrefsCache[key]!==undefined) return aiPrefsCache[key];
@@ -1715,7 +1847,7 @@ async function aiTakeTurn(){
   if(ai.budget < nextMin){ aiPass(); return; }
 
   const totalRemaining = 5 - ai.items.length;       // includes this pick
-  const D = AI_DIFFICULTY[P.difficulty] || AI_DIFFICULTY.normal;
+  const D = P.opponent || AI_DIFFICULTY[P.difficulty] || AI_DIFFICULTY.normal;
 
   // Genuine disinterest in weak items — without this the ceiling math always
   // clears a $1 opening bid, so the AI contested (and usually won) literally
@@ -1738,7 +1870,10 @@ async function aiTakeTurn(){
   }
   const ratingFactor = 0.67 + (P.currentLot.r-1)/9*(1.33-0.67);
   const affordableCeiling = Math.max(0, ai.budget - reserve);
-  const organicCeiling = Math.min(affordableCeiling, Math.round(baseFrac*20*ratingFactor*D.ceilingMult));
+  let personalityMult = D.ceilingMult;
+  if(D.eliteBoost && P.currentLot.r >= 9) personalityMult *= D.eliteBoost;   // Marcus lunges at 9s
+  if(D.earlyRush && ai.items.length <= 1) personalityMult *= D.earlyRush;    // Rex front-loads
+  const organicCeiling = Math.min(affordableCeiling, Math.round(baseFrac*20*ratingFactor*personalityMult));
 
   const key = (P.currentLot.cat||P.themeName)+'::'+P.currentLot.name;
   const humanAvg = D.useLearning ? await fetchAiPref(key) : null;
@@ -1766,7 +1901,7 @@ async function aiTakeTurn(){
 function aiPass(){
   const P = App.practice;
   if(P.currentBidder===null){
-    P.tickerLog.push('AI: pass');
+    P.tickerLog.push(`${P.players[1].nick}: pass`);
     P.passStreak = (P.passStreak||0)+1;
     if(P.passStreak>=2){ return resolveForcedPass(P, 1); }
     P.turn = 0;
@@ -1797,7 +1932,7 @@ function renderPracticeDraft(){
   hideBidControls();
 
   if(P.mode==='contested'){
-    $('status-line').textContent = P.turn===0 ? "Your turn — raise or pass" : "AI is thinking…";
+    $('status-line').textContent = P.turn===0 ? "Your turn — raise or pass" : `${P.players[1].nick} is thinking…`;
     if(P.turn===0){
       renderBidControls({
         budget: P.players[0].budget,
@@ -1824,7 +1959,7 @@ function renderPracticeDraft(){
         onSecondary: ()=>{ sndClick(); humanSkip(); }
       });
     } else {
-      $('status-line').textContent = "AI doesn't need to compete for this one…";
+      $('status-line').textContent = `${P.players[1].nick} doesn't need to compete for this one…`;
       $('waiting-turn').classList.remove('hidden');
     }
   }
@@ -2269,6 +2404,33 @@ function showResultsScreen(players, P){
 }
 
 /* ============ RESULTS: ONLINE ============ */
+// Read-only view of a permanently saved result (from a /r/XXXX link).
+async function loadSharedResult(id){
+  try{
+    const res = await fetch('/.netlify/functions/room', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ action:'result', resultId:id })
+    });
+    const data = await res.json();
+    if(!res.ok || !data.result){ alert(data.error || 'Could not load that result.'); return false; }
+    const s = data.result;
+    const itemsArr = s.sides.map(x=>x.items);
+    const nicks = s.sides.map(x=>x.label);
+    const budgets = s.sides.map(x=>x.budget);
+    renderResults(itemsArr, nicks, budgets, s.bidLog||[], resultViewFor(s.theme.key), {
+      themeLabel: (s.theme.emoji||'🎯')+' '+s.theme.name,
+      catThemeKey: s.theme.key,
+      canRematch: false,
+      sharedView: true,
+      shareUrl: location.origin + '/r/' + s.id,
+      onRematch: ()=>{}
+    });
+    $('btn-home').textContent = '🏠 Play Dr4fter';
+    $('btn-home').onclick = ()=>{ location.href = '/'; };
+    return true;
+  }catch(e){ alert('Could not load that result.'); return false; }
+}
+
 function renderResultsFromRoom(room){
   const bidders = sidesOfClient(room);
   const itemsArr = bidders.map(p=>p.items);
@@ -2282,6 +2444,7 @@ function renderResultsFromRoom(room){
     themeLabel: (room.theme.emoji||'🎯')+' '+room.theme.name,
     catThemeKey: room.theme.key,
     mySideIdx: myIdx,
+    shareUrl: room.game.resultId ? (location.origin + '/r/' + room.game.resultId) : '',
     resultKey: room.code+'|'+(room.game.gameId||''),
     canRematch: !!amHostOrCreator,
     onRematch: goRematchThemePick
@@ -2341,8 +2504,14 @@ function renderResults(itemsArr, nicks, budgets, bidLog, resultView, opts){
     <div class="judgment-text">${escapeHtml(paragraph)}</div>${duelHTML}`;
   flavorWrap.appendChild(card);
 
+  // stash what the share/export needs
+  App.lastResults = {
+    themeLabel: opts.themeLabel, nicks, itemsArr, budgets,
+    catThemeKey: opts.catThemeKey, verdict: paragraph, shareUrl: opts.shareUrl || ''
+  };
+
   // record this result once (guarded so re-renders/polls don't double-count)
-  if(opts.resultKey && App.lastRecordedResult !== opts.resultKey){
+  if(!opts.sharedView && opts.resultKey && App.lastRecordedResult !== opts.resultKey){
     App.lastRecordedResult = opts.resultKey;
     const myIdx = opts.mySideIdx;
     if(myIdx != null && myIdx >= 0 && itemsArr[myIdx]){
@@ -2350,6 +2519,19 @@ function renderResults(itemsArr, nicks, budgets, bidLog, resultView, opts){
       recordGameResult(opts.themeLabel.replace(/^\S+\s/, ''), itemsArr[myIdx], budgets[myIdx], outcome);
     }
   }
+
+  const linkBtn = $('btn-copy-link');
+  linkBtn.classList.toggle('hidden', !opts.shareUrl);
+  if(opts.shareUrl){
+    linkBtn.onclick = async ()=>{
+      const orig = linkBtn.textContent;
+      try{ await navigator.clipboard.writeText(opts.shareUrl); linkBtn.textContent = '✓ Link copied!'; }
+      catch(e){ linkBtn.textContent = opts.shareUrl; }
+      setTimeout(()=>{ linkBtn.textContent = orig; }, 2200);
+    };
+  }
+  // a shared read-only view has nothing to rematch or save stats for
+  if(opts.sharedView){ $('btn-rematch').classList.add('hidden'); }
 
   $('btn-rematch').classList.toggle('hidden', opts.canRematch===false);
   $('btn-rematch').onclick = opts.onRematch;
@@ -2418,6 +2600,31 @@ function renderPitchSVG(items){
 }
 
 /* ============ SAVE AS IMAGE ============ */
+function buildShareText(){
+  const d = App.lastResults;
+  if(!d) return '';
+  const lines = [];
+  lines.push(`Dr4fter — ${d.themeLabel}`);
+  lines.push(d.verdict);
+  lines.push('');
+  d.nicks.forEach((n,i)=>{
+    lines.push(`${n} — $${20-d.budgets[i]} spent`);
+    d.itemsArr[i].forEach(it=>{
+      const price = it.paid===0 ? 'FREE' : '$'+it.paid;
+      lines.push(`  ${it.cat ? catShortLabel(d.catThemeKey, it.cat)+': ' : ''}${it.name} (${it.r}/10) — ${price}`);
+    });
+    lines.push('');
+  });
+  if(d.shareUrl) lines.push(d.shareUrl);
+  return lines.join('\n').trim();
+}
+$('btn-copy-text').onclick = async ()=>{
+  const btn = $('btn-copy-text'), orig = btn.textContent;
+  const text = buildShareText();
+  try{ await navigator.clipboard.writeText(text); btn.textContent = '✓ Copied!'; }
+  catch(e){ btn.textContent = 'Copy failed'; }
+  setTimeout(()=>{ btn.textContent = orig; }, 1600);
+};
 $('btn-save-image').onclick = async ()=>{
   try{
     const canvas = await html2canvas($('results-card'), {backgroundColor:'#F5EFE3', scale:2});
@@ -2462,7 +2669,33 @@ $('btn-start-rematch').onclick = async ()=>{
 $('btn-use-custom-space').onclick  = ()=>useCustomTheme('space');
 $('btn-use-custom-things').onclick = ()=>useCustomTheme('things');
 renderThemeGrid();
+renderOpponents();
 updateHomeForRematch();
+
+/* ---- ?join=CODE (from a QR scan) prefills the join screen ---- */
+(function(){
+  let code = null;
+  try{
+    const m = location.search.match(/[?&]join=([A-Za-z0-9]{5})\b/);
+    if(m) code = m[1].toUpperCase();
+  }catch(e){ return; }
+  if(!code) return;
+  goNickname('join');
+  $('join-code-input').value = code;
+  $('nickname-context').textContent = `Joining room ${code} — just pick a nickname.`;
+})();
+
+/* ---- /r/XXXXXX opens a saved result instead of the home screen ---- */
+(function(){
+  // guarded: a throw at top level here would kill the whole script
+  let m = null;
+  try{ m = location.pathname.match(/^\/r\/([A-Za-z0-9]{4,10})\/?$/); }catch(e){ return; }
+  if(!m) return;
+  App.sharedResultId = m[1].toUpperCase();
+  showScreen('screen-results');
+  $('results-title').textContent = 'Loading…';
+  loadSharedResult(App.sharedResultId);
+})();
 
 /* ---- offer to rejoin a room from a closed tab ---- */
 (function(){

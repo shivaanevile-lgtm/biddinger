@@ -5,3 +5,9 @@
 
 [functions]
   node_bundler = "esbuild"
+
+# permanent results links: /r/ABCDEF is handled by the client
+[[redirects]]
+  from = "/r/*"
+  to = "/index.html"
+  status = 200
